@@ -1,6 +1,6 @@
 "use client"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutDashboard,
   Link2,
@@ -14,7 +14,8 @@ import {
   ChevronDown,
   LogOut,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -86,7 +87,31 @@ const navigation = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const [openMenus, setOpenMenus] = useState<string[]>(["Agente IA", "Ferramentas"])
+  const [userName, setUserName] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          setUserName(user.user_metadata?.full_name || "Usuário")
+        }
+      } catch (error) {
+        console.error("Error fetching user details", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchUser()
+  }, [])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.replace("/login")
+  }
 
   const toggleMenu = (name: string) => {
     setOpenMenus((prev) => (prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]))
@@ -100,7 +125,7 @@ export function AppSidebar() {
           <Zap className="h-5 w-5 text-primary-foreground" />
         </div>
         <span className="text-xl font-bold text-sidebar-foreground">
-          Prospekt<span className="text-primary">AI</span>
+          Prospekt<span className="text-primary">IA</span>
         </span>
       </div>
 
@@ -174,14 +199,40 @@ export function AppSidebar() {
 
       {/* Footer */}
       <div className="border-t border-border p-4 space-y-3">
+        {/* User Info Section */}
+        <div className="flex items-center gap-3 px-2 py-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20">
+            <User className="h-4 w-4 text-primary" />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {loading ? (
+              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-sm font-medium truncate text-sidebar-foreground">
+                {userName || "Usuário"}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground truncate">Membro Pro</p>
+          </div>
+        </div>
+
         <div className="rounded-lg bg-sidebar-accent p-3">
           <p className="text-xs font-medium text-sidebar-accent-foreground">Plano Atual</p>
-          <p className="mt-1 text-sm font-bold text-primary">Pro</p>
-          <p className="mt-1 text-xs text-muted-foreground">500 leads/mês</p>
+          <div className="flex justify-between items-end">
+            <p className="mt-1 text-sm font-bold text-primary">Pro</p>
+            <Zap className="h-3 w-3 text-yellow-500 mb-1" />
+          </div>
+
+          {/* Progress bar placeholder */}
+          <div className="w-full bg-black/20 h-1 mt-2 rounded-full overflow-hidden">
+            <div className="bg-primary h-full w-[65%]" />
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">325/500 leads usados</p>
         </div>
 
         <Button
           variant="ghost"
+          onClick={handleLogout}
           className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
         >
           <LogOut className="h-4 w-4" />
