@@ -12,20 +12,20 @@ interface KanbanCardProps {
 }
 
 function OriginBadge({ origin }: { origin: string }) {
-    const icons = {
-        maps: <MapPin className="h-3 w-3" />,
-        instagram: <Instagram className="h-3 w-3" />,
-        cnpj: <FileText className="h-3 w-3" />,
+    const icons: Record<string, React.ReactNode> = {
+        "google maps": <MapPin className="h-3 w-3" />,
+        "instagram": <Instagram className="h-3 w-3" />,
+        "extração cnpj": <FileText className="h-3 w-3" />,
     }
 
     // Normalize origin key to lower case for matching
-    const key = origin?.toLowerCase() as keyof typeof icons
+    const key = origin?.toLowerCase() || ""
     const icon = icons[key] || <FileText className="h-3 w-3" />
 
-    const colors = {
-        maps: "bg-red-500/10 text-red-500 border-red-500/20",
-        instagram: "bg-pink-500/10 text-pink-500 border-pink-500/20",
-        cnpj: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    const colors: Record<string, string> = {
+        "google maps": "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+        "instagram": "bg-pink-500/10 text-pink-500 border-pink-500/20",
+        "extração cnpj": "bg-red-500/10 text-red-500 border-red-500/20",
     }
 
     const colorClass = colors[key] || "bg-gray-500/10 text-gray-500 border-gray-500/20"

@@ -28,44 +28,56 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
                 }
 
                 // Verifica status da assinatura e dados do perfil
-                const { data: profile, error } = await supabase
-                    .from("profiles")
-                    .select("subscription_status, full_name")
-                    .eq("id", user.id)
-                    .single()
+                // CRITICAL: Table name MUST be 'profiles' and column 'subscription_status'
+                // Retry logic for profile fetching to handle race conditions
+                let profile: any = null
+                let fetchError = null
 
-                if (error) {
-                    console.error("Erro ao verificar assinatura:", error)
-                    setHasAccess(false)
-                } else {
-                    // Prepara URL do checkout
-                    if (user.email && profile?.full_name) {
-                        // Verifica se a variável de ambiente está definida
-                        const baseUrl = process.env.NEXT_PUBLIC_KIWIFY_CHECKOUT_URL
+                for (let i = 0; i < 3; i++) {
+                    const { data, error } = await supabase
+                        .from("profiles")
+                        .select("subscription_status, full_name")
+                        .eq("id", user.id)
+                        .single()
 
-                        if (!baseUrl) {
-                            console.warn("A variável de ambiente NEXT_PUBLIC_KIWIFY_CHECKOUT_URL não está definida.")
-                        }
-
-                        if (baseUrl) {
-                            const params = new URLSearchParams({
-                                email: user.email,
-                                name: profile.full_name
-                            })
-                            setCheckoutUrl(`${baseUrl}?${params.toString()}`)
-                        }
+                    if (!error && data) {
+                        profile = data
+                        fetchError = null
+                        break
                     }
 
-                    // Verifica se está ativo OU se está em uma rota permitida
-                    const isActive = profile?.subscription_status === "active"
+                    fetchError = error
+                    // Wait 1s before retrying if not found/error
+                    if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000))
+                }
+
+                // EMERGENCY BYPASS (Lançamento 04/01)
+                // Se for o suporte, ignora verificação do DB e define status como active
+                const isSupport = user.email === 'turbodigital.suporte@gmail.com'
+                if (isSupport) {
+                    // Mock profile data only if missing, forcing active status logic below
+                    if (!profile) profile = { full_name: 'Suporte', subscription_status: 'active' }
+                }
+
+                if ((fetchError || !profile) && !isSupport) {
+                    // Log apenas ERRO REAL se não for suporte
+                    console.error("ERRO REAL:", fetchError)
+                    setHasAccess(false)
+                } else {
+                    // ... (rest of logic)
+
+                    const status = isSupport ? 'active' : profile?.subscription_status?.toLowerCase()
+                    const isActive = status === 'active'
                     const isAllowedRoute = ALLOWED_ROUTES.some(route => pathname?.startsWith(route))
 
                     setHasAccess(isActive || isAllowedRoute)
                 }
             } catch (error) {
-                console.error("Erro inesperado:", error)
+                console.error("ERRO REAL:", error)
                 setHasAccess(false)
             } finally {
+                // Wait for the minimum delay to prevent flickering
+                await new Promise(resolve => setTimeout(resolve, 800))
                 setLoading(false)
             }
         }
@@ -119,11 +131,17 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
                                 </Button>
 
                                 <Button
+                                    asChild
                                     variant="ghost"
                                     className="w-full text-muted-foreground hover:text-foreground"
-                                    onClick={() => router.push("/suporte")}
                                 >
-                                    Falar com Suporte
+                                    <a
+                                        href={process.env.NEXT_PUBLIC_SUPORTE_URL || "#"}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        Falar com Suporte
+                                    </a>
                                 </Button>
                             </div>
                         </CardContent>

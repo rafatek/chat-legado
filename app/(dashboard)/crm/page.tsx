@@ -101,13 +101,13 @@ export default async function CRMPage() {
   })
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2rem)] space-y-4">
+    <div className="flex flex-col h-full space-y-4">
       <div className="flex-shrink-0">
         <h1 className="text-3xl font-bold">CRM Pipeline</h1>
         <p className="mt-1 text-muted-foreground">Gerencie seus leads e oportunidades em tempo real.</p>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-hidden bg-[#0A0A0C] border border-white/5 rounded-xl p-4 shadow-inner">
+      <div className="flex-1 overflow-hidden bg-[#0A0A0C] border border-white/5 rounded-xl p-4 shadow-inner">
         <KanbanBoard initialColumns={columns} />
       </div>
     </div>

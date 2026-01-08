@@ -14,7 +14,7 @@ export function KanbanColumn({ column, onDelete }: KanbanColumnProps) {
     const isProtected = ["Novos Leads", "Fechados"].includes(column.title)
 
     return (
-        <div className="flex flex-col w-[320px] min-w-[320px] h-full max-h-full">
+        <div className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
             {/* Column Header */}
             <div className="flex items-center justify-between p-4 mb-3 rounded-lg bg-[#111114] border border-white/5">
                 <div className="flex items-center gap-2">
@@ -37,7 +37,7 @@ export function KanbanColumn({ column, onDelete }: KanbanColumnProps) {
             </div>
 
             {/* Droppable Area */}
-            <Droppable droppableId={column.id}>
+            <Droppable droppableId={column.id} type="lead">
                 {(provided, snapshot) => (
                     <div
                         {...provided.droppableProps}
@@ -46,7 +46,7 @@ export function KanbanColumn({ column, onDelete }: KanbanColumnProps) {
                 flex-1 flex flex-col gap-3 p-2 rounded-lg transition-colors overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent
                 ${snapshot.isDraggingOver ? "bg-white/[0.02]" : "bg-transparent"}
             `}
-                        style={{ minHeight: '150px' }}
+                        style={{ minHeight: '150px', flexGrow: 1, maxHeight: 'calc(100vh - 200px)' }}
                     >
                         {column.leads.map((lead, index) => (
                             <KanbanCard key={lead.id} lead={lead} index={index} />

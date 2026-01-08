@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Brain, Lock } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from "@/lib/supabase"
 import { motion, AnimatePresence } from "framer-motion"
 import { useRouter } from "next/navigation"
 
@@ -177,11 +177,9 @@ export default function LoginPage() {
   const [isError, setIsError] = useState(false)
   const router = useRouter()
 
-  // Use createBrowserClient for correct cookie handling
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+
+
+  // Supabase client from global singleton (handled in imports)
 
   const handleLogin = async (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault()

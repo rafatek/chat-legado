@@ -97,7 +97,22 @@ export function AppSidebar() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
-          setUserName(user.user_metadata?.full_name || "Usuário")
+          // Tenta buscar o nome do perfil na tabela profiles
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single()
+
+          if (error) {
+            console.error("Erro ao buscar perfil na Sidebar:", error)
+          }
+
+          // Lógica de fallback estrita: profiles.full_name -> user.email
+          const nameToDisplay = profile?.full_name || user.email || "Usuário"
+
+          console.log("Status Sidebar - Profile:", profile, "Display:", nameToDisplay)
+          setUserName(nameToDisplay)
         }
       } catch (error) {
         console.error("Error fetching user details", error)

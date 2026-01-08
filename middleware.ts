@@ -17,9 +17,7 @@ export async function middleware(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) => {
-                        request.cookies.set(name, value)
-                    })
+                    cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
                     response = NextResponse.next({
                         request: {
                             headers: request.headers,
@@ -33,35 +31,26 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-// ... dentro da sua função middleware ...
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
 
-const { data: { user } } = await supabase.auth.getUser()
+    // Redirecionamento seguro: Se logado e no login/home, vai para dashboard
+    if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/')) {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
 
-// Se NÃO houver usuário e a rota NÃO for login/pública, REDIRECIONA
-if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    request.nextUrl.pathname !== '/'
-) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url) // Aqui o segurança barra a entrada!
-}
+    // Proteção de rotas privadas
+    const publicRoutes = ['/login', '/auth', '/favicon.ico']
+    if (!user && !publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) {
+        return NextResponse.redirect(new URL('/login', request.url))
+    }
 
-return response
-
+    return response
 }
 
 export const config = {
     matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * Feel free to modify this pattern to include more paths.
-         */
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }
