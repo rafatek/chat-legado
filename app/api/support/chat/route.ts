@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
-// Initialize OpenAI client
-// Note: In production, it's better to use server-side keys (OPENAI_API_KEY).
-// Here we use the variable provided by the user.
-const openai = new OpenAI({
-    apiKey: process.env.NEXT_PUBLIC_CHATGPT_KEY,
-});
+// OpenAI client is initialized inside the handler to avoid build-time errors due to missing env vars
 
 export async function POST(req: NextRequest) {
     try {
@@ -90,6 +85,12 @@ export async function POST(req: NextRequest) {
             console.log("Trace 2: Invalid ID detected, forcing new thread.");
             currentThreadId = null;
         }
+
+        // Initialize OpenAI client with the validated API key
+        // We do this inside the handler to avoid build-time errors
+        const openai = new OpenAI({
+            apiKey: apiKey,
+        });
 
         // 3. Create or Retrieve Thread
         if (!currentThreadId) {
