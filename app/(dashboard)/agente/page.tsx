@@ -1,131 +1,216 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useEffect } from "react"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Save, Sparkles } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Bot, MessageSquare, Megaphone, Settings2, Power, Loader2, Calendar } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { AtendimentoConfigSheet } from "@/components/agents/atendimento-config-sheet"
+import { ProspectingConfigSheet } from "@/components/agents/prospecting-config-sheet"
 
-export default function AgentePage() {
+// Type for card summary data
+interface AgentSummary {
+  is_active: boolean
+  agent_name: string
+}
+
+export default function AgentsHubPage() {
+  const [isAtendimentoSheetOpen, setIsAtendimentoSheetOpen] = useState(false)
+  const [isProspectingSheetOpen, setIsProspectingSheetOpen] = useState(false)
+
+  // Local state for dashboard cards (to show active status without opening sheet)
+  const [atendimentoSummary, setAtendimentoSummary] = useState<AgentSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchSummaries = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('agents_configs')
+        .select('agent_type, is_active, agent_name')
+        .eq('user_id', user.id)
+
+      // Parse result
+      const atendimento = data?.find((a: any) => a.agent_type === 'atendimento')
+      if (atendimento) {
+        setAtendimentoSummary({
+          is_active: atendimento.is_active,
+          agent_name: atendimento.agent_name || "Agente de Atendimento"
+        })
+      }
+    } catch (error) {
+      console.error("Error fetching summaries", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchSummaries()
+  }, [isAtendimentoSheetOpen]) // Re-fetch when sheet closes to update status
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-balance text-3xl font-bold tracking-tight">Configuração do Agente IA</h1>
-        <p className="text-muted-foreground">Personalize o comportamento da IA de prospecção</p>
+    <div className="space-y-8 p-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+          Central de Agentes
+        </h1>
+        <p className="text-muted-foreground max-w-2xl">
+          Gerencie sua equipe de inteligência artificial. Ative, configure e monitore seus agentes autônomos.
+        </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main Configuration */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Instruções do Agente
-            </CardTitle>
-            <CardDescription>Defina como a IA deve se comportar durante a prospecção</CardDescription>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+
+        {/* === CARD AGENTE ATENDIMENTO === */}
+        <Card className="relative overflow-hidden border-indigo-500/20 bg-gradient-to-b from-card to-card/50 transition-all hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5">
+          <div className="absolute top-0 right-0 p-4">
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              <Badge variant={atendimentoSummary?.is_active ? "default" : "secondary"} className={atendimentoSummary?.is_active ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" : ""}>
+                {atendimentoSummary?.is_active ? "Ativo" : "Pausado"}
+              </Badge>
+            )}
+          </div>
+
+          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
+              <Bot className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle>Atendimento</CardTitle>
+              <CardDescription className="line-clamp-2">
+                Responde clientes no WhatsApp, tira dúvidas e qualifica leads 24/7.
+              </CardDescription>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="instructions">Prompt do Agente</Label>
-              <Textarea
-                id="instructions"
-                placeholder="Ex: Você é um agente de vendas especializado em abordagens consultivas. Seu objetivo é identificar necessidades do cliente e apresentar soluções personalizadas..."
-                className="min-h-[200px] resize-none"
-              />
-              <p className="text-xs text-muted-foreground">
-                Seja específico sobre o tom, estilo e objetivos da comunicação
-              </p>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="tone">Tom de Voz</Label>
-                <Select defaultValue="professional">
-                  <SelectTrigger id="tone">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="professional">Profissional</SelectItem>
-                    <SelectItem value="friendly">Amigável</SelectItem>
-                    <SelectItem value="casual">Casual</SelectItem>
-                    <SelectItem value="formal">Formal</SelectItem>
-                  </SelectContent>
-                </Select>
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                <span>WhatsApp</span>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="language">Idioma</Label>
-                <Select defaultValue="pt-br">
-                  <SelectTrigger id="language">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pt-br">Português (BR)</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="es">Español</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="h-4 w-[1px] bg-border" />
+              <span>{atendimentoSummary?.agent_name || "Não configurado"}</span>
             </div>
+          </CardContent>
 
-            <Button className="w-full">
-              <Save className="mr-2 h-4 w-4" />
-              Salvar Configurações
+          <CardFooter>
+            <Button
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-900/20"
+              onClick={() => setIsAtendimentoSheetOpen(true)}
+            >
+              <Settings2 className="mr-2 h-4 w-4" />
+              Configurar Agente
             </Button>
-          </CardContent>
+          </CardFooter>
         </Card>
 
-        {/* Search Sources */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Fontes de Busca</CardTitle>
-            <CardDescription>Selecione onde buscar leads</CardDescription>
+        {/* === CARD AGENTE PROSPECÇÃO === */}
+        <Card className="relative overflow-hidden border-emerald-500/20 bg-gradient-to-b from-card to-card/50 transition-all hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/5">
+          {/* Future status badge logic here if needed */}
+          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+              <Megaphone className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle>Prospecção Ativa</CardTitle>
+              <CardDescription>
+                Busca novos clientes, envia mensagens iniciais e agenda reuniões.
+              </CardDescription>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <label className="flex items-center justify-between rounded-lg border border-border p-4 cursor-pointer hover:bg-accent/5 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                    <span className="text-lg">🗺️</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Google Maps</p>
-                    <p className="text-xs text-muted-foreground">Empresas locais</p>
-                  </div>
-                </div>
-                <input type="checkbox" defaultChecked className="h-4 w-4" />
-              </label>
-
-              <label className="flex items-center justify-between rounded-lg border border-border p-4 cursor-pointer hover:bg-accent/5 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10">
-                    <span className="text-lg">📸</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Instagram</p>
-                    <p className="text-xs text-muted-foreground">Perfis e negócios</p>
-                  </div>
-                </div>
-                <input type="checkbox" defaultChecked className="h-4 w-4" />
-              </label>
-
-              <label className="flex items-center justify-between rounded-lg border border-border p-4 cursor-pointer hover:bg-accent/5 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-3/10">
-                    <span className="text-lg">🏢</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">CNPJ</p>
-                    <p className="text-xs text-muted-foreground">Dados empresariais</p>
-                  </div>
-                </div>
-                <input type="checkbox" className="h-4 w-4" />
-              </label>
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4" />
+                <span>Outbound</span>
+              </div>
             </div>
           </CardContent>
+          <CardFooter>
+            <Button
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-900/20"
+              onClick={() => setIsProspectingSheetOpen(true)}
+            >
+              <Settings2 className="mr-2 h-4 w-4" />
+              Configurar Agente
+            </Button>
+          </CardFooter>
         </Card>
+
+        {/* === CARD SDR AGENDAMENTO (EM BREVE) === */}
+        <Card className="relative overflow-hidden border-blue-500/20 bg-gradient-to-b from-card to-card/50 transition-all opacity-80">
+          <div className="absolute top-0 right-0 p-4">
+            <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+              Em Breve
+            </Badge>
+          </div>
+
+          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+              <Calendar className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle>SDR de Agendamento</CardTitle>
+              <CardDescription>
+                Essa IA será capaz de fazer agendamentos no Seu Google Agenda.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>Google Agenda</span>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button
+              disabled
+              className="w-full bg-blue-600/50 text-white shadow-md shadow-blue-900/10 cursor-not-allowed"
+            >
+              Em Breve
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* === CARD NOVA LOJA === */}
+        <Card className="flex flex-col items-center justify-center border-dashed border-2 bg-transparent opacity-50 hover:opacity-80 hover:bg-muted/10 transition-all cursor-pointer">
+          <div className="flex flex-col items-center gap-2 py-10">
+            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+              <span className="text-2xl">+</span>
+            </div>
+            <h3 className="font-medium">Loja de Agentes</h3>
+            <p className="text-sm text-muted-foreground">Novos modelos em breve</p>
+          </div>
+        </Card>
+
       </div>
+
+      {/* Sheets / Modals */}
+      <AtendimentoConfigSheet
+        open={isAtendimentoSheetOpen}
+        onOpenChange={setIsAtendimentoSheetOpen}
+      />
+      <ProspectingConfigSheet
+        open={isProspectingSheetOpen}
+        onOpenChange={setIsProspectingSheetOpen}
+      />
     </div>
   )
 }

@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Proteção de rotas privadas
-    const publicRoutes = ['/login', '/auth', '/favicon.ico']
+    const publicRoutes = ['/login', '/auth', '/favicon.ico', '/api/webhook']
     if (!user && !publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) {
         return NextResponse.redirect(new URL('/login', request.url))
     }

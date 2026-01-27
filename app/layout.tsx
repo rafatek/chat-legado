@@ -18,17 +18,15 @@ export const metadata: Metadata = {
         media: "(prefers-color-scheme: light)",
       },
       {
-        url: "/icon-dark-32x32.png",
+        url: "/icon-light-32x32.png", // Usando o mesmo logo para dark mode já que o usuário substituiu este arquivo
         media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
       },
     ],
     apple: "/apple-icon.png",
   },
 }
+
+import { Toaster } from "@/components/ui/toaster"
 
 export default function RootLayout({
   children,
@@ -39,6 +37,7 @@ export default function RootLayout({
     <html lang="pt-BR" className="dark">
       <body className={`font-sans antialiased`}>
         {children}
+        <Toaster />
         <Analytics />
       </body>
     </html>

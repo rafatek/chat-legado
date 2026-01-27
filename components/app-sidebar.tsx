@@ -13,6 +13,8 @@ import {
   FolderKanban,
   ChevronDown,
   LogOut,
+  Megaphone,
+  Brain,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -37,41 +39,24 @@ const navigation = [
     icon: FolderKanban,
   },
   {
+    name: "Campanhas",
+    href: "/campanhas",
+    icon: Megaphone,
+  },
+  {
     name: "Conexões",
     href: "/conexoes",
     icon: Link2,
   },
   {
     name: "Agente IA",
+    href: "/agente",
     icon: BrainCircuit,
-    submenu: [
-      {
-        name: "Agente de Prospecção",
-        href: "/agente/prospeccao",
-      },
-      {
-        name: "Agente de Atendimento",
-        href: "/agente/atendimento",
-      },
-    ],
   },
   {
     name: "Ferramentas",
+    href: "/ferramentas",
     icon: Wrench,
-    submenu: [
-      {
-        name: "Extrator do Maps",
-        href: "/ferramentas/maps",
-      },
-      {
-        name: "Extrator de Instagram",
-        href: "/ferramentas/instagram",
-      },
-      {
-        name: "Extrator de CNPJ",
-        href: "/ferramentas/cnpj",
-      },
-    ],
   },
   {
     name: "Minha Conta",
@@ -136,11 +121,11 @@ export function AppSidebar() {
     <div className="flex h-screen w-64 flex-col border-r border-border bg-sidebar">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2 border-b border-border px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-5 w-5 text-primary-foreground" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 shadow-md shadow-purple-500/20">
+          <Brain className="h-5 w-5 text-white" />
         </div>
         <span className="text-xl font-bold text-sidebar-foreground">
-          Prospekt<span className="text-primary">IA</span>
+          Prospekt<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">IA</span>
         </span>
       </div>
 
@@ -227,22 +212,8 @@ export function AppSidebar() {
                 {userName || "Usuário"}
               </p>
             )}
-            <p className="text-xs text-muted-foreground truncate">Membro Pro</p>
+            <p className="text-xs text-muted-foreground truncate">Membro Start</p>
           </div>
-        </div>
-
-        <div className="rounded-lg bg-sidebar-accent p-3">
-          <p className="text-xs font-medium text-sidebar-accent-foreground">Plano Atual</p>
-          <div className="flex justify-between items-end">
-            <p className="mt-1 text-sm font-bold text-primary">Pro</p>
-            <Zap className="h-3 w-3 text-yellow-500 mb-1" />
-          </div>
-
-          {/* Progress bar placeholder */}
-          <div className="w-full bg-black/20 h-1 mt-2 rounded-full overflow-hidden">
-            <div className="bg-primary h-full w-[65%]" />
-          </div>
-          <p className="mt-1 text-[10px] text-muted-foreground">325/500 leads usados</p>
         </div>
 
         <Button

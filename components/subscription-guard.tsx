@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Lock, Zap, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 // Rotas que são permitidas mesmo sem assinatura ativa
 const ALLOWED_ROUTES = ["/conta", "/suporte", "/login"]
@@ -36,7 +37,7 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
                 for (let i = 0; i < 3; i++) {
                     const { data, error } = await supabase
                         .from("profiles")
-                        .select("subscription_status, full_name")
+                        .select("subscription_status, full_name, server_id")
                         .eq("id", user.id)
                         .single()
 
@@ -64,6 +65,35 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
                     console.error("ERRO REAL:", fetchError)
                     setHasAccess(false)
                 } else {
+                    // --- SERVER IDENTITY LOGIC ---
+                    const currentServerId = process.env.NEXT_PUBLIC_SERVER_ID
+                    const userServerId = profile?.server_id
+
+                    if (!userServerId && currentServerId) {
+                        // LGICA DE STAMP: Primeiro acesso, grava o servidor atual
+                        console.log("Creating Server Identity Stamp:", currentServerId)
+                        const { error: updateError } = await supabase
+                            .from('profiles')
+                            .update({ server_id: currentServerId })
+                            .eq('id', user.id)
+
+                        if (updateError) console.error("Error stamping server_id:", updateError)
+                    } else if (userServerId && currentServerId && userServerId !== currentServerId) {
+                        // LGICA DE REDIRECT (TRAVA): Servidor errado
+                        const targetUrl = `https://${userServerId}.prospektia.com/dashboard`
+                        const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('192.168.')
+
+                        if (isLocal) {
+                            toast.warning(`Simulao de Redirecionamento: Voc seria enviado para ${userServerId}`, {
+                                description: "Em produo voc seria redirecionado.",
+                                duration: 8000
+                            })
+                        } else {
+                            window.location.href = targetUrl
+                            return // Stop execution
+                        }
+                    }
+                    // -----------------------------
                     // ... (rest of logic)
 
                     const status = isSupport ? 'active' : profile?.subscription_status?.toLowerCase()

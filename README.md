@@ -19,6 +19,8 @@ ProspektAI é um sistema de CRM e automação de prospecção que combina inteli
 - Extração de leads via CNPJ (dados de empresas brasileiras)
 - Importação e exportação de leads
 - Filtros avançados e segmentação
+- Pastas organizáveis e paginação de alta performance
+- Sistema de movimentação em massa de leads
 
 ### 📋 CRM Kanban
 - Sistema de gerenciamento de clientes em formato Kanban
@@ -30,12 +32,16 @@ ProspektAI é um sistema de CRM e automação de prospecção que combina inteli
 - Integração com provedores de e-mail (SMTP)
 - Conexão com APIs de redes sociais
 - Configuração de contas de redes sociais para automação
+- Gerenciamento de Campanhas com escala lateral e múltiplos servidores
+- Sistema de distribuição inteligente de carga
 
 ### 🤖 Agentes de IA
 - **Agente de Prospecção**: Automatiza o envio de mensagens personalizadas para leads
 - **Agente de Atendimento**: Responde a perguntas frequentes e encaminha leads qualificados
 - Personalização de scripts e modelos de mensagem
 - Integração com APIs de IA (OpenAI, etc.)
+- **Central de Agentes (Hub)**: Nova interface unificada para configuração e gerenciamento
+- Preview em tempo real das configurações do agente
 
 ### ⚙️ Ferramentas
 - **Extrator do Maps**: Busca empresas e contatos no Google Maps
@@ -53,6 +59,11 @@ ProspektAI é um sistema de CRM e automação de prospecção que combina inteli
 - Central de ajuda e documentação
 - Chat de suporte
 - Relatórios de uso e desempenho
+
+### 🚀 Onboarding & Experiência
+- **Tutorial Interativo**: Tour guiado para novos usuários
+- Interface com efeitos visuais avançados (Blur, Glow, Spotlight)
+- Design system coeso e responsivo (Glassmorphism)
 
 ## 🏗️ Arquitetura do Projeto
 

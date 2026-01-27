@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { QrCode, CheckCircle2, XCircle, RefreshCw, Smartphone, Loader2, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button" // existing
+import { Input } from "@/components/ui/input" // new
+import { Badge } from "@/components/ui/badge" // new
+import { QrCode, CheckCircle2, XCircle, RefreshCw, Smartphone, Loader2, Trash2, Webhook, Copy, RefreshCcw } from "lucide-react" // updated icons
 import { supabase } from "@/lib/supabase"
-import { toast } from "sonner" // Assuming sonner is installed/used for toasts, or we can fallback to alert/console
+import { toast } from "sonner"
 
 // Env vars
 const EVO_URL = process.env.NEXT_PUBLIC_EVO_URL
@@ -21,6 +23,10 @@ export default function ConexoesPage() {
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<string>("disconnected") // connecting, open, close
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
+
+  // Webhook State
+  const [webhookToken, setWebhookToken] = useState<string | null>(null)
+  const [webhookLoading, setWebhookLoading] = useState(false)
 
   // 1. Check Supabase on Mount
   useEffect(() => {
@@ -54,7 +60,89 @@ export default function ConexoesPage() {
     }
 
     checkConnection()
+    fetchWebhookToken()
   }, [])
+
+  // Webhook Logic
+  const fetchWebhookToken = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('webhook_token')
+        .eq('id', user.id)
+        .single()
+
+      if (profile && profile.webhook_token) {
+        setWebhookToken(profile.webhook_token)
+      }
+    } catch (error) {
+      console.error("Error fetching webhook token:", error)
+    }
+  }
+
+  const handleGenerateWebhookToken = async () => {
+    try {
+      setWebhookLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // Custom UUID v4 generator to avoid 'crypto.randomUUID is not a function' in insecure contexts (localhost)
+      const newToken = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ webhook_token: newToken })
+        .eq('id', user.id)
+
+      if (error) throw error
+
+      setWebhookToken(newToken)
+      toast.success("Novo token de Webhook gerado!")
+    } catch (error) {
+      console.error("Error generating token:", error)
+      toast.error("Erro ao gerar token. Tente novamente.")
+    } finally {
+      setWebhookLoading(false)
+    }
+  }
+
+  const handleCopyWebhookUrl = () => {
+    if (!webhookToken) return
+    const url = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/api/webhook/${webhookToken}`
+
+    // Robust copy fallback for non-secure contexts (http)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url)
+        .then(() => toast.success("URL copiada para a área de transferência"))
+        .catch(() => copyToClipboardFallback(url))
+    } else {
+      copyToClipboardFallback(url)
+    }
+  }
+
+  const copyToClipboardFallback = (text: string) => {
+    const textArea = document.createElement("textarea")
+    textArea.value = text
+    textArea.style.position = "fixed"
+    textArea.style.left = "-9999px"
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    try {
+      document.execCommand('copy')
+      toast.success("URL copiada para a área de transferência")
+    } catch (err) {
+      console.error('Falha ao copiar', err)
+      toast.error("Erro ao copiar: copie manualmente")
+    }
+    document.body.removeChild(textArea)
+  }
 
   // Helper to check state directly from Evo
   const checkEvolutionState = async (instName: string) => {
@@ -505,6 +593,68 @@ export default function ConexoesPage() {
         </Card>
       </div>
 
+      {/* Webhook Configuration Card */}
+      <Card className="border-indigo-500/20 bg-indigo-500/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Webhook className="h-5 w-5 text-indigo-500" />
+            Webhook Inteligente
+          </CardTitle>
+          <CardDescription>
+            Receba leads automaticamente de diversas fontes. O sistema identifica e padroniza os dados.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-200/20">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Extração Google Maps
+            </Badge>
+            <Badge variant="secondary" className="bg-pink-500/10 text-pink-500 border-pink-200/20">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Instagrapi / Instagram
+            </Badge>
+            <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-200/20">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Receita WS / CNPJ
+            </Badge>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <label className="text-sm font-medium">Sua URL de Webhook</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  readOnly
+                  value={webhookToken ? `${process.env.NEXT_PUBLIC_APP_URL || "https://app.prospektia.com"}/api/webhook/${webhookToken}` : "Gere um token para obter a URL"}
+                  className="bg-background pr-24 font-mono text-sm"
+                />
+              </div>
+              <Button onClick={handleCopyWebhookUrl} disabled={!webhookToken} variant="outline" className="shrink-0 gap-2">
+                <Copy className="h-4 w-4" /> Copiar
+              </Button>
+            </div>
+            {!webhookToken && (
+              <Button onClick={handleGenerateWebhookToken} disabled={webhookLoading} className="w-fit gap-2">
+                <RefreshCcw className={`h-4 w-4 ${webhookLoading ? 'animate-spin' : ''}`} />
+                Gerar Token de Acesso
+              </Button>
+            )}
+            {webhookToken && (
+              <div className="text-xs text-muted-foreground flex items-center justify-between">
+                <span>Token ativo e seguro.</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto p-0 text-red-400 hover:text-red-500 hover:bg-transparent"
+                  onClick={handleGenerateWebhookToken}
+                  disabled={webhookLoading}
+                >
+                  Regerar Token (Revoga o anterior)
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <style jsx>{`
         @keyframes scan {
           0% { top: 0%; }
@@ -512,6 +662,6 @@ export default function ConexoesPage() {
           100% { top: 0%; }
         }
       `}</style>
-    </div>
+    </div >
   )
 }

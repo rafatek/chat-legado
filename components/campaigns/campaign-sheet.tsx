@@ -1,0 +1,294 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetFooter,
+} from "@/components/ui/sheet"
+import { toast } from "sonner"
+import { createCampaign, updateCampaign, getCampaignLeads } from "@/lib/actions/campaigns"
+import { Loader2, Users, Filter } from "lucide-react"
+import { LeadSelector } from "@/components/campaigns/lead-selector"
+
+const campaignSchema = z.object({
+    name: z.string().min(3, "Nome muito curto"),
+    folder_name: z.string().optional(),
+    schedule_days: z.array(z.string()).min(1, "Selecione pelo menos um dia"),
+    schedule_start_time: z.string().min(1, "Início obrigatório"),
+    schedule_end_time: z.string().min(1, "Fim obrigatório"),
+    min_interval_seconds: z.coerce.number().min(5),
+    max_interval_seconds: z.coerce.number().min(5),
+})
+
+type CampaignForm = z.infer<typeof campaignSchema>
+
+interface CampaignSheetProps {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    onSuccess: () => void
+    campaignToEdit?: any
+}
+
+const DAYS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"]
+
+export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }: CampaignSheetProps) {
+    const [submitting, setSubmitting] = useState(false)
+    const [isSelectorOpen, setIsSelectorOpen] = useState(false)
+    const [selectedLeadsCount, setSelectedLeadsCount] = useState(0)
+    const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+    const [lockedLeadIds, setLockedLeadIds] = useState<Set<string>>(new Set())
+
+    // Convert API days (1-7) to UI days STRINGS
+    const mapDaysToUI = (days?: number[]) => {
+        if (!days) return ["SEG", "TER", "QUA", "QUI", "SEX"]
+        const dayMap: Record<number, string> = { 1: "SEG", 2: "TER", 3: "QUA", 4: "QUI", 5: "SEX", 6: "SAB", 7: "DOM" }
+        return days.map(d => dayMap[d]).filter(Boolean)
+    }
+
+    const form = useForm<CampaignForm>({
+        resolver: zodResolver(campaignSchema),
+        defaultValues: {
+            name: "",
+            folder_name: "",
+            schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
+            schedule_start_time: "09:00",
+            schedule_end_time: "18:00",
+            min_interval_seconds: 5,
+            max_interval_seconds: 20,
+        },
+    })
+
+    // Reset form when opening or changing edit mode
+    useEffect(() => {
+        if (open) {
+            if (campaignToEdit) {
+                // Formatting for Edit
+                form.reset({
+                    name: campaignToEdit.name,
+                    folder_name: campaignToEdit.folder_name || "",
+                    schedule_days: mapDaysToUI(campaignToEdit.schedule_days),
+                    schedule_start_time: campaignToEdit.start_time,
+                    schedule_end_time: campaignToEdit.end_time,
+                    min_interval_seconds: campaignToEdit.min_interval_min || 5, // Careful with naming convention mismatch (min/sec)
+                    max_interval_seconds: campaignToEdit.max_interval_min || 20,
+                })
+
+                // Fetch existing leads for this campaign
+                const fetchLeads = async () => {
+                    try {
+                        const leads = await getCampaignLeads(campaignToEdit.id)
+                        // leads: { lead_id, status }[]
+                        // We extract all IDs for "selected"
+                        const ids = leads.map((l: any) => l.lead_id)
+                        // We extract non-pending/error for "locked"
+                        const locked = leads.filter((l: any) => l.status !== 'pending' && l.status !== 'error').map((l: any) => l.lead_id)
+
+                        setSelectedLeadIds(ids)
+                        setSelectedLeadsCount(ids.length)
+                        setLockedLeadIds(new Set(locked))
+                        console.log("Fetched leads:", ids.length, "Locked:", locked.length)
+                    } catch (err) {
+                        console.error("Failed to fetch campaign leads", err)
+                    }
+                }
+                fetchLeads()
+
+            } else {
+                // Create Mode
+                form.reset({
+                    name: "",
+                    folder_name: "",
+                    schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
+                    schedule_start_time: "09:00",
+                    schedule_end_time: "18:00",
+                    min_interval_seconds: 5,
+                    max_interval_seconds: 20,
+                })
+                setSelectedLeadIds([])
+                setSelectedLeadsCount(0)
+                setLockedLeadIds(new Set())
+            }
+        }
+    }, [open, campaignToEdit, form])
+
+    const handleLeadsSelected = (ids: string[], folderName: string) => {
+        setSelectedLeadIds(ids)
+        setSelectedLeadsCount(ids.length)
+        form.setValue("folder_name", folderName)
+    }
+
+    const onSubmit = async (data: CampaignForm) => {
+        if (!campaignToEdit && selectedLeadIds.length === 0 && !confirm("Nenhum lead selecionado manualmente. Deseja criar a campanha mesmo assim? (Pode não ter leads se a pasta estiver vazia)")) {
+            return
+        }
+
+        setSubmitting(true)
+        try {
+            const payload = {
+                ...data,
+                folder_name: data.folder_name || "Todas",
+                selected_lead_ids: selectedLeadIds
+            }
+
+            let result
+            if (campaignToEdit) {
+                result = await updateCampaign({ ...payload, id: campaignToEdit.id })
+            } else {
+                result = await createCampaign(payload)
+            }
+
+            if (result.success) {
+                toast.success(campaignToEdit ? "Campanha atualizada!" : `Campanha criada com ${result.count} leads!`)
+                onSuccess()
+                onOpenChange(false)
+                if (!campaignToEdit) form.reset()
+                setSelectedLeadIds([])
+                setSelectedLeadsCount(0)
+            } else {
+                toast.error("Erro ao salvar campanha: " + result.error)
+            }
+        } catch (error) {
+            console.error(error)
+            toast.error("Erro inesperado")
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    const toggleDay = (day: string) => {
+        const current = form.getValues("schedule_days")
+        if (current.includes(day)) {
+            form.setValue("schedule_days", current.filter(d => d !== day))
+        } else {
+            form.setValue("schedule_days", [...current, day])
+        }
+    }
+
+    return (
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent
+                side="right"
+                className="w-[calc(100%-16rem)] max-w-none sm:max-w-none border-l border-white/10 bg-[#0A0A0C]/90 backdrop-blur-xl p-0 shadow-2xl transition-all duration-500 ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
+                style={{ marginLeft: '16rem' }}
+            >
+                <div className="h-full overflow-y-auto p-6 scrollbar-hide">
+                    <SheetHeader className="mb-8 border-b border-white/5 pb-6">
+                        <SheetTitle className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                            {campaignToEdit ? "Editar Campanha" : "Nova Campanha"}
+                        </SheetTitle>
+                        <SheetDescription className="text-lg mt-1">
+                            {campaignToEdit ? "Atualize as configurações da campanha." : "Configure os dias e horários e selecione os leads para envio."}
+                        </SheetDescription>
+                    </SheetHeader>
+
+                    <div className="max-w-4xl mx-auto">
+                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-6">
+                            <div className="space-y-2">
+                                <Label>Nome da Campanha</Label>
+                                <Input {...form.register("name")} placeholder="Ex: Prospecção Imobiliária" />
+                                {form.formState.errors.name && <span className="text-red-500 text-xs">{form.formState.errors.name.message}</span>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Público Alvo (Leads)</Label>
+                                <div className="flex items-center gap-4 p-4 border border-white/10 rounded-lg bg-white/5 transition-colors hover:bg-white/10">
+                                    <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
+                                        <Users className="h-5 w-5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h4 className="font-medium text-white">Selecionar Leads</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            {selectedLeadsCount > 0
+                                                ? `${selectedLeadsCount} leads selecionados`
+                                                : campaignToEdit
+                                                    ? "Nenhum lead vinculado."
+                                                    : "Nenhum lead selecionado. Clique em Escolher."}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        onClick={() => setIsSelectorOpen(true)}
+                                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg shadow-blue-500/20"
+                                    >
+                                        <Filter className="mr-2 h-4 w-4" />
+                                        Escolher Leads
+                                    </Button>
+                                </div>
+                                <Input type="hidden" {...form.register("folder_name")} />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Dias de Envio</Label>
+                                <div className="flex flex-wrap gap-2">
+                                    {DAYS.map(day => {
+                                        const isSelected = form.watch("schedule_days")?.includes(day)
+                                        return (
+                                            <button
+                                                key={day}
+                                                type="button"
+                                                onClick={() => toggleDay(day)}
+                                                className={`h-8 w-8 rounded-full text-xs font-bold transition-all
+                                                  ${isSelected ? "bg-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-muted/80"}
+                                                `}
+                                            >
+                                                {day.charAt(0)}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Início (Horário)</Label>
+                                    <Input type="time" {...form.register("schedule_start_time")} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Fim (Horário)</Label>
+                                    <Input type="time" {...form.register("schedule_end_time")} />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Intervalo Mín (minutos)</Label>
+                                    <Input type="number" {...form.register("min_interval_seconds")} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Intervalo Máx (minutos)</Label>
+                                    <Input type="number" {...form.register("max_interval_seconds")} />
+                                </div>
+                            </div>
+
+                            <SheetFooter>
+                                <Button type="submit" disabled={submitting} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 font-bold tracking-wide">
+                                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    {campaignToEdit ? "SALVAR ALTERAÇÕES" : "CRIAR CAMPANHA"}
+                                </Button>
+                            </SheetFooter>
+                        </form>
+                    </div>
+                </div>
+
+                <LeadSelector
+                    open={isSelectorOpen}
+                    onOpenChange={setIsSelectorOpen}
+                    onConfirm={handleLeadsSelected}
+                    initialFolder={form.getValues("folder_name") || "Todas"}
+                    initialSelectedIds={selectedLeadIds}
+                    lockedIds={lockedLeadIds}
+                />
+            </SheetContent>
+        </Sheet>
+    )
+}
