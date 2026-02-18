@@ -16,15 +16,15 @@ import { OnboardingTour } from "@/components/onboarding-tour"
 
 // Mapeamento de rotas para links de tutorial
 const TUTORIAL_LINKS: Record<string, string> = {
-  "/dashboard": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/leads": "https://www.youtube.com/watch?v=nHPhRyjBwaE&list=RDHjkEp-Wd-VQ&index=2",
-  "/crm": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/campanhas": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/conexoes": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/agente": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/ferramentas": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/conta": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
-  "/suporte": "https://www.youtube.com/watch?v=HjkEp-Wd-VQ&list=RDHjkEp-Wd-VQ&start_radio=1",
+  "/dashboard": "https://youtu.be/MPCgdYWaanY",
+  "/leads": "https://youtu.be/8gtc47BCyjo",
+  "/crm": "https://youtu.be/MfCrCOlJuPA",
+  "/campanhas": "https://youtu.be/AmQAzkE10vs",
+  "/conexoes": "https://youtu.be/sJFOEWAbiEY",
+  "/agente": "https://youtu.be/UEUf6qbG_p0",
+  "/ferramentas": "https://youtu.be/wkH6ubS3cxk",
+  "/conta": "https://youtu.be/1AvdUmQET_w",
+  "/suporte": "https://youtu.be/lEqpDwwN9i0",
 }
 
 // Função para extrair o ID do vídeo do YouTube
