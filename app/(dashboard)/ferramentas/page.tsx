@@ -22,7 +22,7 @@ const tools: Tool[] = [
         description: "Extração ilimitada de empresas direto do Google Maps.",
         image: "/maps.png",
         downloadUrl: "https://prospektia.com/download/extensao-google-maps.crx",
-        tutorialUrl: "https://youtube.com", // Placeholder
+        tutorialUrl: "https://youtu.be/geZAy3I2jZs", // Placeholder
         tag: "BESTSELLER"
     },
     {
@@ -31,7 +31,7 @@ const tools: Tool[] = [
         description: "Encontre leads qualificados no Instagram automaticamente.",
         image: "/instagram.png",
         downloadUrl: "https://prospektia.com/download/instagram-prospektia.crx",
-        tutorialUrl: "https://youtube.com", // Placeholder
+        tutorialUrl: "https://youtu.be/4f56NtAHLko", // Placeholder
         tag: "POPULAR"
     },
     {
@@ -40,7 +40,7 @@ const tools: Tool[] = [
         description: "Busca completa de dados corporativos via CNPJ.",
         image: "/cnpj.png",
         downloadUrl: "https://prospektia.com/download/Prospektia-CNPJ-Extrator-Leads.crx",
-        tutorialUrl: "https://youtube.com", // Placeholder
+        tutorialUrl: "https://youtu.be/HxExnT3ooSU", // Placeholder
         tag: "NOVO"
     }
 ]
