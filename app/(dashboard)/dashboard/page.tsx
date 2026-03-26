@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Users, MessageSquare, TrendingUp, Zap, Megaphone, Smartphone, CheckCircle2, XCircle, RefreshCw } from "lucide-react"
+import { Users, MessageSquare, Zap, Smartphone, CheckCircle2, XCircle } from "lucide-react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
@@ -24,354 +24,210 @@ export default function DashboardPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [fullName, setFullName] = useState<string | null>(null)
 
-  // Metrics State
   const [metrics, setMetrics] = useState({
     totalLeads: 0,
     activeCampaigns: 0,
     totalMessagesSent: 0,
-    connectionStatus: "disconnected", // disconnected, connected
+    connectionStatus: "disconnected",
     connectionInstance: ""
   })
 
-  // Charts State
   const [funnelData, setFunnelData] = useState<any[]>([])
   const [sourceData, setSourceData] = useState<any[]>([])
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d']
+  const COLORS = ['#00A3FF', '#0066FF', '#00CCFF', '#0044BB', '#0082CC']
 
   useEffect(() => {
     const checkUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser()
-
         if (!user) {
           router.replace("/login")
           return
         }
-
         setUser(user)
+
+        // BUSCA O NOME REAL NO PERFIL
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single()
+        
+        setFullName(profile?.full_name || user.user_metadata?.full_name || "Usuário")
+        
         fetchDashboardData(user.id)
       } catch (error) {
         console.error("Error checking auth:", error)
         router.replace("/login")
       }
     }
-
     checkUser()
   }, [router])
 
   const fetchDashboardData = async (userId: string) => {
     try {
       setLoading(true)
-
-      // 1. Connection Status
-      const { data: conn } = await supabase
-        .from("whatsapp_connections")
-        .select("status, instance_name")
-        .eq("user_id", userId)
-        .single()
-
-      const connectionStatus = conn?.status === "connected" ? "connected" : "disconnected"
-      const connectionInstance = conn?.instance_name || ""
-
-      // 2. Active Campaigns
-      const { count: activeCampaignsCount } = await supabase
-        .from("campaigns")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("status", "active")
-
-      // 3. Total Messages Sent (Aggregation across all campaigns)
-      // We need to find campaigns owned by user first, then count sent leads
-      // Assuming RLS allows us to just query campaign_leads joined with campaigns? 
-      // campaign_leads usually doesn't have user_id. We fetch campaigns first.
-      const { data: userCampaigns } = await supabase
-        .from("campaigns")
-        .select("id")
-        .eq("user_id", userId)
+      const { data: conn } = await supabase.from("whatsapp_connections").select("status, instance_name").eq("user_id", userId).single()
+      const { count: activeCampaignsCount } = await supabase.from("campaigns").select("*", { count: "exact", head: true }).eq("user_id", userId).eq("status", "active")
+      const { data: userCampaigns } = await supabase.from("campaigns").select("id").eq("user_id", userId)
 
       let totalMessages = 0
       if (userCampaigns && userCampaigns.length > 0) {
-        const campaignIds = userCampaigns.map(c => c.id)
-        const { count: msgCount } = await supabase
-          .from("campaign_leads")
-          .select("*", { count: "exact", head: true })
-          .in("campaign_id", campaignIds)
-          .eq("status", "sent")
-
+        const campaignIds = userCampaigns.map((c: any) => c.id)
+        const { count: msgCount } = await supabase.from("campaign_leads").select("*", { count: "exact", head: true }).in("campaign_id", campaignIds).eq("status", "sent")
         totalMessages = msgCount || 0
       }
 
-      // 4. Leads & Charts Data
-      // Fetch all leads to compute totals and aggregations locally to save requests
-      const { data: allLeads, count: totalLeadsCount } = await supabase
-        .from("leads")
-        .select("id, origin, column_id", { count: 'exact' })
-        .eq("user_id", userId)
+      const { data: allLeads, count: totalLeadsCount } = await supabase.from("leads").select("id, origin, column_id", { count: 'exact' }).eq("user_id", userId)
+      const { data: columns } = await supabase.from("kanban_columns").select("id, title, position").eq("user_id", userId).order("position")
 
-      const totalLeads = totalLeadsCount || 0
-
-      // Process Source Data
       const sourcesMap: Record<string, number> = {}
-      allLeads?.forEach(lead => {
+      allLeads?.forEach((lead: any) => {
         const origin = lead.origin || "Outros"
         sourcesMap[origin] = (sourcesMap[origin] || 0) + 1
       })
 
-      const processedSourceData = Object.keys(sourcesMap).map(key => ({
-        name: key,
-        value: sourcesMap[key]
-      })).sort((a, b) => b.value - a.value)
-
-      // Process Funnel Data
-      // Fetch columns first
-      const { data: columns } = await supabase
-        .from("kanban_columns")
-        .select("id, title, position")
-        .eq("user_id", userId)
-        .order("position")
-
-      let processedFunnelData: any[] = []
-      if (columns) {
-        processedFunnelData = columns.map(col => {
-          const count = allLeads?.filter(l => l.column_id === col.id).length || 0
-          return {
-            name: col.title,
-            leads: count
-          }
-        })
-      }
-
       setMetrics({
-        totalLeads,
+        totalLeads: totalLeadsCount || 0,
         activeCampaigns: activeCampaignsCount || 0,
         totalMessagesSent: totalMessages,
-        connectionStatus,
-        connectionInstance
+        connectionStatus: conn?.status === "connected" ? "connected" : "disconnected",
+        connectionInstance: conn?.instance_name || ""
       })
 
-      setSourceData(processedSourceData)
-      setFunnelData(processedFunnelData)
+      setSourceData(Object.keys(sourcesMap).map(key => ({ name: key, value: sourcesMap[key] })).sort((a, b) => b.value - a.value))
+      
+      setFunnelData(columns?.map((col: any) => ({
+        name: col.title,
+        leads: allLeads?.filter((l: any) => l.column_id === col.id).length || 0
+      })) || [])
 
     } catch (error) {
-      console.error("Error fetching dashboard data:", error)
+      console.error("Error fetching dashboard:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const hora = new Date().getHours();
-  let saudacao = "";
-  if (hora >= 5 && hora < 12) {
-    saudacao = "Bom dia";
-  } else if (hora >= 12 && hora < 18) {
-    saudacao = "Boa tarde";
-  } else {
-    saudacao = "Boa noite";
-  }
+  const hora = new Date().getHours()
+  const saudacao = hora >= 5 && hora < 12 ? "Bom dia" : hora >= 12 && hora < 18 ? "Boa tarde" : "Boa noite"
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10 bg-[#050508] min-h-screen text-white">
       <div>
-        <h1 className="text-balance text-3xl font-bold tracking-tight">
-          Olá, {user?.user_metadata?.full_name?.split(' ')[0] || 'Visitante'}! {saudacao}!
+        <h1 className="text-3xl font-black tracking-tight uppercase italic">
+          Olá, {fullName?.split(' ')[0] || 'Julio'}<span className="text-[#00A3FF]">!</span> {saudacao}<span className="text-[#00A3FF]">.</span>
         </h1>
-        <p className="text-muted-foreground">Bem-vindo ao seu painel de controle.</p>
+        <p className="text-gray-600 uppercase text-[10px] font-bold tracking-[0.4em] mt-1">Legado Performance Digital • Dashboard</p>
       </div>
 
-      {/* Connection Status Banner (if disconnected) */}
       {metrics.connectionStatus !== "connected" && !loading && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-center justify-between">
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center justify-between backdrop-blur-md">
           <div className="flex items-center gap-3">
             <XCircle className="h-6 w-6 text-red-500" />
             <div>
-              <h3 className="text-sm font-semibold text-red-500">WhatsApp Desconectado</h3>
-              <p className="text-xs text-red-400">Suas campanhas não serão enviadas.</p>
+              <h3 className="text-sm font-bold text-red-500 uppercase tracking-widest">WhatsApp Offline</h3>
+              <p className="text-[10px] text-red-400/80 uppercase tracking-wider">Atenção: Os disparos automáticos estão pausados.</p>
             </div>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-red-500/20 text-red-500 hover:bg-red-500/10"
-            onClick={() => router.push("/conexoes")}
-          >
-            Conectar Agora
+          <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest" onClick={() => router.push("/conexoes")}>
+            Reconectar
           </Button>
         </div>
       )}
 
-      {/* Metrics Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {/* Total Leads */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Total de Leads</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-20 bg-muted rounded animate-pulse" />
-            ) : (
-              <div className="text-2xl font-bold">{metrics.totalLeads}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Na sua base de dados</p>
-          </CardContent>
-        </Card>
+        {[
+          { title: "Total de Leads", value: metrics.totalLeads, icon: Users },
+          { title: "Campanhas Ativas", value: metrics.activeCampaigns, icon: Zap },
+          { title: "Mensagens Enviadas", value: metrics.totalMessagesSent, icon: MessageSquare },
+        ].map((item, i) => (
+          <Card key={i} className="bg-white/[0.01] border-white/5 backdrop-blur-xl">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-600">{item.title}</CardTitle>
+              <item.icon className="h-4 w-4 text-[#00A3FF]" />
+            </CardHeader>
+            <CardContent>
+              {loading ? <div className="h-8 w-20 bg-white/5 rounded animate-pulse" /> : <div className="text-3xl font-black tracking-tight text-white">{item.value}</div>}
+            </CardContent>
+          </Card>
+        ))}
 
-        {/* Active Campaigns */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Campanhas Ativas</CardTitle>
-            <Zap className="h-4 w-4 text-yellow-500" />
+        <Card className="bg-white/[0.01] border-white/5 backdrop-blur-xl">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-600">Status Conexão</CardTitle>
+            <Smartphone className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="h-8 w-12 bg-muted rounded animate-pulse" />
-            ) : (
-              <div className="text-2xl font-bold">{metrics.activeCampaigns}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Rodando atualmente</p>
-          </CardContent>
-        </Card>
-
-        {/* Messages Sent */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Mensagens Enviadas</CardTitle>
-            <MessageSquare className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-16 bg-muted rounded animate-pulse" />
-            ) : (
-              <div className="text-2xl font-bold">{metrics.totalMessagesSent}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Total de disparos realizados</p>
-          </CardContent>
-        </Card>
-
-        {/* Connection Status Card (Small) */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Status da Conexão</CardTitle>
-            <Smartphone className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-6 w-24 bg-muted rounded animate-pulse" />
-            ) : (
-              <div className="flex items-center gap-2">
-                {metrics.connectionStatus === 'connected' ? (
-                  <div className="flex items-center gap-1.5 text-green-500 font-bold">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Online</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-red-500 font-bold">
-                    <XCircle className="h-4 w-4" />
-                    <span>Offline</span>
-                  </div>
+            {loading ? <div className="h-6 w-24 bg-white/5 rounded animate-pulse" /> : (
+              <div className="space-y-1">
+                <div className={`flex items-center gap-2 font-black uppercase text-xs tracking-widest ${metrics.connectionStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
+                  {metrics.connectionStatus === 'connected' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                  {metrics.connectionStatus === 'connected' ? 'Online' : 'Offline'}
+                </div>
+                {metrics.connectionStatus === 'connected' && (
+                  <p className="text-[9px] text-gray-700 uppercase tracking-tighter truncate font-bold">
+                    Instância: {metrics.connectionInstance.toLowerCase().includes('prospekt') ? 'Legado_Master' : metrics.connectionInstance}
+                  </p>
                 )}
               </div>
             )}
-            {metrics.connectionStatus === 'connected' && (
-              <p className="text-xs text-muted-foreground mt-1 truncate">{metrics.connectionInstance}</p>
-            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts Section */}
       <div className="grid gap-4 md:grid-cols-7">
-
-        {/* CRM Funnel Chart */}
-        <Card className="col-span-4">
+        <Card className="col-span-4 bg-white/[0.01] border-white/5 backdrop-blur-xl">
           <CardHeader>
-            <CardTitle>Funil de Vendas (CRM)</CardTitle>
-            <CardDescription>Quantidade de leads em cada etapa</CardDescription>
+            <CardTitle className="text-sm font-black uppercase tracking-widest text-[#00A3FF]">Funil de Vendas</CardTitle>
+            <CardDescription className="text-[10px] uppercase text-gray-700 tracking-wider font-bold">Distribuição por etapa do CRM</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <div className="h-[300px] w-full">
-              {loading ? (
-                <div className="h-full w-full bg-muted/10 rounded animate-pulse flex items-center justify-center">Carregando gráfico...</div>
-              ) : funnelData.length > 0 ? (
+              {funnelData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={funnelData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                    <XAxis
-                      dataKey="name"
-                      stroke="#888888"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      stroke="#888888"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1f1f1f', border: 'none', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                      cursor={{ fill: '#ffffff10' }}
-                    />
-                    <Bar dataKey="leads" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                    <XAxis dataKey="name" stroke="#444" fontSize={10} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#444" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#050508', border: '1px solid #ffffff10', borderRadius: '8px' }} itemStyle={{ color: '#00A3FF', fontWeight: '900', textTransform: 'uppercase', fontSize: '10px' }} cursor={{ fill: '#ffffff05' }} />
+                    <Bar dataKey="leads" fill="#00A3FF" radius={[4, 4, 0, 0]} barSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Sem dados no CRM
-                </div>
-              )}
+              ) : <div className="h-full flex items-center justify-center text-[10px] uppercase tracking-widest text-gray-800">Sincronizando...</div>}
             </div>
           </CardContent>
         </Card>
 
-        {/* Lead Sources Chart */}
-        <Card className="col-span-3">
+        <Card className="col-span-3 bg-white/[0.01] border-white/5 backdrop-blur-xl">
           <CardHeader>
-            <CardTitle>Fontes de Leads</CardTitle>
-            <CardDescription>Origem da sua base de contatos</CardDescription>
+            <CardTitle className="text-sm font-black uppercase tracking-widest text-[#00A3FF]">Origem dos Leads</CardTitle>
+            <CardDescription className="text-[10px] uppercase text-gray-700 tracking-wider font-bold">Principais canais de entrada</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full">
-              {loading ? (
-                <div className="h-full w-full bg-muted/10 rounded animate-pulse flex items-center justify-center">Carregando gráfico...</div>
-              ) : sourceData.length > 0 ? (
+              {sourceData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie
-                      data={sourceData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {sourceData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
+                    <Pie data={sourceData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={8} dataKey="value">
+                      {sourceData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} stroke="none" />)}
                     </Pie>
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1f1f1f', border: 'none', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    <Tooltip contentStyle={{ backgroundColor: '#050508', border: '1px solid #ffffff10', borderRadius: '8px' }} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '2px', color: '#444', fontWeight: 'bold' }} />
                   </PieChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Sem dados de fontes
-                </div>
-              )}
+              ) : <div className="h-full flex items-center justify-center text-[10px] uppercase tracking-widest text-gray-800">Sem fontes</div>}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <p className="text-center text-[10px] text-gray-800 uppercase tracking-[0.5em] mt-8 font-black">
+        Legado Performance Digital © 2026
+      </p>
     </div>
   )
 }

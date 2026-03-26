@@ -8,8 +8,8 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "ProspektAI - Prospecção Inteligente com IA",
-  description: "Agente de IA para prospecção automática via Maps, Instagram e CNPJ",
+  title: "Legado Performance",
+  description: "Engenharia de Performance & Escala",
   generator: "v0.app",
   icons: {
     icon: [
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
         media: "(prefers-color-scheme: light)",
       },
       {
-        url: "/icon-light-32x32.png", // Usando o mesmo logo para dark mode já que o usuário substituiu este arquivo
+        url: "/icon-light-32x32.png", 
         media: "(prefers-color-scheme: dark)",
       },
     ],
