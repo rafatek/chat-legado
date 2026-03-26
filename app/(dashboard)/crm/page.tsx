@@ -103,7 +103,7 @@ export default async function CRMPage() {
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex-shrink-0">
-        <h1 className="text-3xl font-bold">CRM Pipeline</h1>
+        <h1 className="text-3xl font-bold">CRM / Kanban</h1>
         <p className="mt-1 text-muted-foreground">Gerencie seus leads e oportunidades em tempo real.</p>
       </div>
 

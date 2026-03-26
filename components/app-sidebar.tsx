@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button"
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "CRM", href: "/crm", icon: FolderKanban },
-  { name: "Campanhas", href: "/campanhas", icon: Megaphone },
+  { name: "Disparos", href: "/campanhas", icon: Megaphone },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
   { name: "Agente IA", href: "/agente", icon: BrainCircuit },
   { name: "Minha Conta", href: "/conta", icon: User },

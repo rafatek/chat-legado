@@ -142,7 +142,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[
           { title: "Total de Leads", value: metrics.totalLeads, icon: Users },
-          { title: "Campanhas Ativas", value: metrics.activeCampaigns, icon: Zap },
+          { title: "Disparos Ativos", value: metrics.activeCampaigns, icon: Zap },
           { title: "Mensagens Enviadas", value: metrics.totalMessagesSent, icon: MessageSquare },
         ].map((item, i) => (
           <Card key={i} className="bg-white/[0.01] border-white/5 backdrop-blur-xl">

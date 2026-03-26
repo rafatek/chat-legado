@@ -10,8 +10,8 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
 // Env vars
-const EVO_URL = process.env.NEXT_PUBLIC_EVO_URL
-const EVO_API_KEY = process.env.NEXT_PUBLIC_EVO_API_KEY
+const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
+const UAZAPI_ADMIN_TOKEN = process.env.NEXT_PUBLIC_UAZAPI_ADMIN_TOKEN
 
 export default function ConexoesPage() {
   const [loading, setLoading] = useState(true)
@@ -19,6 +19,7 @@ export default function ConexoesPage() {
 
   // Instance State
   const [instanceName, setInstanceName] = useState<string | null>(null)
+  const [instanceToken, setInstanceToken] = useState<string | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<string>("disconnected") // connecting, open, close
@@ -43,13 +44,14 @@ export default function ConexoesPage() {
 
         if (connection && !error) {
           setInstanceName(connection.instance_name)
+          setInstanceToken(connection.instance_key)
           if (connection.status === "connected") {
             setIsConnected(true)
             setConnectionStatus("open")
           } else {
             // If exists but not connected, maybe we need to fetch QR or check state
             setInstanceName(connection.instance_name)
-            checkEvolutionState(connection.instance_name)
+            checkUazapiState(connection.instance_name, connection.instance_key)
           }
         }
       } catch (err) {
@@ -144,48 +146,57 @@ export default function ConexoesPage() {
     document.body.removeChild(textArea)
   }
 
-  // Helper to check state directly from Evo
-  const checkEvolutionState = async (instName: string) => {
+  // Helper to check state directly from UazAPI
+  const checkUazapiState = async (instName: string, token: string) => {
     try {
-      const res = await fetch(`${EVO_URL}/instance/connectionState/${instName}`, {
+      const res = await fetch(`${UAZAPI_URL}/instance/status`, {
+        method: "GET",
         headers: {
-          "apikey": EVO_API_KEY as string
+          "token": token
         }
       })
       const data = await res.json()
-      // Expected: { instance: { state: 'open' | 'close' | 'connecting' } }
-      const state = data?.instance?.state || "close"
+      
+      const isConnectedApi = data?.connected === true || 
+                             data?.status?.connected === true || 
+                             data?.instance?.status === "connected" || 
+                             data?.state === "open" || 
+                             data?.state === "connected" ||
+                             data?.instance?.state === "open";
+                             
+      const stateString = data?.state || data?.instance?.state || data?.instance?.status || "close";
 
-      if (state === "open") {
+      if (isConnectedApi) {
         setIsConnected(true)
         setConnectionStatus("open")
-        // Update Supabase if needed
         await updateSupabaseStatus(instName, "connected")
       } else {
         setIsConnected(false)
-        setConnectionStatus(state)
-        if (state === "close" || state === "connecting") {
-          // Try to get QR Code again if it's not open
-          fetchQrCode(instName)
+        setConnectionStatus(stateString)
+        if (!isConnectedApi) {
+          fetchQrCode(instName, token)
         }
       }
     } catch (e) {
-      console.error("Error checking Evo state:", e)
+      console.error("Error checking UazAPI state:", e)
     }
   }
 
   // 2. Fetch QR Code
-  const fetchQrCode = async (instName: string) => {
+  const fetchQrCode = async (instName: string, token: string) => {
     try {
-      const res = await fetch(`${EVO_URL}/instance/connect/${instName}`, {
+      const res = await fetch(`${UAZAPI_URL}/instance/connect`, {
+        method: "POST",
         headers: {
-          "apikey": EVO_API_KEY as string
-        }
+          "Content-Type": "application/json",
+          "token": token
+        },
+        body: JSON.stringify({})
       })
       const data = await res.json()
-      // Expected: { base64: "..." } or { code: ..., base64: "..." }
-      if (data.base64) {
-        setQrCodeBase64(data.base64)
+      const qrData = data?.instance?.qrcode || data?.qrcode || data?.base64 || data?.instance?.base64;
+      if (qrData) {
+        setQrCodeBase64(qrData)
       }
     } catch (e) {
       console.error("Error fetching QR:", e)
@@ -200,35 +211,38 @@ export default function ConexoesPage() {
       if (!user) return
 
       // --- ZOMBIE CLEANUP START ---
-      // 1. Check for existing connection in Supabase
       const { data: existingConn } = await supabase
         .from("whatsapp_connections")
-        .select("instance_name")
+        .select("instance_name, instance_key")
         .eq("user_id", user.id)
         .single()
 
       if (existingConn && existingConn.instance_name) {
         console.log(`Encontrada instância antiga: ${existingConn.instance_name}. Iniciando limpeza...`)
-
         try {
-          // 2. Delete from Evolution API
-          const delRes = await fetch(`${EVO_URL}/instance/delete/${existingConn.instance_name}`, {
+          // Tentativa primária por Admin Token (Mais garantido em UazAPI)
+          let delRes = await fetch(`${UAZAPI_URL}/instance/delete/${existingConn.instance_name}`, {
             method: "DELETE",
-            headers: { "apikey": EVO_API_KEY as string }
+            headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
           })
+          
+          if (!delRes.ok && existingConn.instance_key) {
+             // Fallback
+             delRes = await fetch(`${UAZAPI_URL}/instance`, {
+               method: "DELETE",
+               headers: { "token": existingConn.instance_key }
+             })
+          }
 
           if (delRes.ok) {
             console.log("Instância antiga deletada na API com sucesso.")
-          } else if (delRes.status === 404 || delRes.status === 400) {
-            console.log("Instância antiga não existia mais na API (404/400). Ignorando...")
           } else {
-            console.warn("Falha ao deletar instância antiga na API:", await delRes.text())
+            console.warn("Falha ao deletar instância antiga na API.")
           }
         } catch (delErr) {
           console.error("Erro ao tentar deletar instância antiga:", delErr)
         }
 
-        // 3. Delete from Supabase (Clean Start)
         await supabase
           .from("whatsapp_connections")
           .delete()
@@ -236,87 +250,66 @@ export default function ConexoesPage() {
       }
       // --- ZOMBIE CLEANUP END ---
 
-      // Short and professional name logic: PRP-{5_CHARS_ID}-{3_RANDOM}
-      const shortId = user.id.slice(0, 5)
-      const randomSuffix = Math.random().toString(36).substring(2, 5)
-      const newInstanceName = `PRP-${shortId}-${randomSuffix}`
+      const shortId = user.id.slice(0, 3).toUpperCase()
+      const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase()
+      const newInstanceName = `LEG-${shortId}-${randomSuffix}`
 
-      console.log('Enviando para:', `${EVO_URL}/instance/create`, 'com chave:', EVO_API_KEY)
-
-      // Payload Exact Match
       const payload = {
-        "instanceName": newInstanceName,
-        "qrcode": true,
-        "integration": "WHATSAPP-BAILEYS"
+        "name": newInstanceName,
+        "systemName": "apilocal",
+        "fingerprintProfile": "chrome",
+        "browser": "chrome"
       }
 
-      console.log('Payload Body:', payload)
+      console.log('Enviando para:', `${UAZAPI_URL}/instance/init`)
 
-      // Call Evolution Create
-      const res = await fetch(`${EVO_URL}/instance/create`, {
+      const res = await fetch(`${UAZAPI_URL}/instance/init`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "apikey": EVO_API_KEY as string
+          "admintoken": UAZAPI_ADMIN_TOKEN as string
         },
         body: JSON.stringify(payload)
       })
 
-      let data;
-      const isSuccess = res.ok;
-
-      try {
-        data = await res.json();
-      } catch (err) {
-        console.error("Erro ao fazer parse do JSON response", err);
-        data = null;
+      const data = await res.json()
+      console.log("Create Response Base:", res.ok, res.status)
+      
+      let token = ""
+      if (res.ok && data.token) {
+        token = data.token
+      } else if (data.hash && data.hash.token) {
+        token = data.hash.token
+      } else {
+        token = data.token || "ERRO"
       }
 
-      console.log("Create Response Status:", res.status);
-      console.log("Create Response Body:", data);
+      const isSuccess = res.ok && token !== "ERRO";
 
-      // Check if success OR if error is "already exists"
-      const isAlreadyExists =
-        !res.ok &&
-        data &&
-        (
-          (data.error && typeof data.error === 'string' && data.error.includes("already exists")) ||
-          (data.message && typeof data.message === 'string' && data.message.includes("already exists")) ||
-          res.status === 403
-        );
+      if (isSuccess) {
+        console.log("Sucesso. Prosseguindo...");
 
-      if (isSuccess || isAlreadyExists) {
-        console.log("Sucesso ou Já Existe. Prosseguindo...");
-
-        // Save to Supabase
         const { error: dbError } = await supabase.from("whatsapp_connections").upsert({
           user_id: user.id,
           instance_name: newInstanceName,
-          instance_key: (data && data.hash && data.hash.apikey) || EVO_API_KEY,
+          instance_key: token,
           status: "connecting",
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' })
 
         if (dbError) {
-          console.error('Erro Detalhado Supabase:', dbError.message, dbError.details, dbError.hint)
+          console.error('Erro Detalhado Supabase:', dbError.message)
           throw dbError
         }
 
-        console.log('✅ Dados salvos no Supabase com sucesso!')
-
         setInstanceName(newInstanceName)
+        setInstanceToken(token)
 
-        // QR Code Handling
-        if (data && data.qrcode && data.qrcode.base64) {
-          setQrCodeBase64(data.qrcode.base64)
-        } else {
-          setTimeout(() => fetchQrCode(newInstanceName), 1000)
-        }
+        setTimeout(() => fetchQrCode(newInstanceName, token), 1000)
 
       } else {
         console.error('Falha na criação:', data)
-        const errorMessage = data?.message || (data?.error ? JSON.stringify(data.error) : "Erro desconhecido")
-        toast.error(`Erro ao criar: ${errorMessage}`)
+        toast.error(`Erro ao criar: ${data.message || "Erro desconhecido"}`)
       }
 
     } catch (e) {
@@ -329,25 +322,33 @@ export default function ConexoesPage() {
 
   // 4. Polling
   useEffect(() => {
-    if (!instanceName) return
+    if (!instanceName || !instanceToken) return
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${EVO_URL}/instance/connectionState/${instanceName}`, {
-          headers: { "apikey": EVO_API_KEY as string }
+        const res = await fetch(`${UAZAPI_URL}/instance/status`, {
+          method: "GET",
+          headers: { "token": instanceToken }
         })
 
-        // Handle Instance Gone (404/410)
-        if (res.status === 404 || res.status === 410 || res.status === 400) {
+        if (res.status === 404 || res.status === 410 || res.status === 400 || res.status === 401) {
           console.log("Instância não encontrada ou inválida. Limpando...")
           await handleLocalDisconnect()
           return
         }
 
         const data = await res.json()
-        const state = data?.instance?.state
+        
+        const isConnectedApi = data?.connected === true || 
+                               data?.status?.connected === true || 
+                               data?.instance?.status === "connected" || 
+                               data?.state === "open" || 
+                               data?.state === "connected" ||
+                               data?.instance?.state === "open";
+                               
+        const stateString = data?.state || data?.instance?.state || data?.instance?.status || "disconnected";
 
-        if (state === 'open') {
+        if (isConnectedApi) {
           if (!isConnected) {
             setIsConnected(true)
             setConnectionStatus('open')
@@ -356,12 +357,11 @@ export default function ConexoesPage() {
             toast.success("WhatsApp Conectado!")
           }
         } else {
-          // Any other state (close, connecting, refuses, etc)
           if (isConnected) {
-            console.log("Detectada desconexão. Estado:", state)
+            console.log("Detectada desconexão. Estado:", stateString)
             setIsConnected(false)
-            setConnectionStatus(state || 'disconnected')
-            setQrCodeBase64(null) // Ensures "Generate QR" button appears
+            setConnectionStatus(stateString)
+            setQrCodeBase64(null)
 
             await updateSupabaseStatus(instanceName, "disconnected")
             toast.warning("Conexão perdida. Reconecte.")
@@ -373,10 +373,9 @@ export default function ConexoesPage() {
     }, 6000)
 
     return () => clearInterval(interval)
-  }, [instanceName, isConnected])
+  }, [instanceName, instanceToken, isConnected])
 
   const handleLocalDisconnect = async () => {
-    // Just cleans up local state and DB row, assumes remote is already gone
     if (!instanceName) return
 
     try {
@@ -390,6 +389,7 @@ export default function ConexoesPage() {
       }
       setIsConnected(false)
       setInstanceName(null)
+      setInstanceToken(null)
       setQrCodeBase64(null)
       setConnectionStatus("disconnected")
     } catch (err) {
@@ -409,16 +409,21 @@ export default function ConexoesPage() {
 
   // 5. DELETE Instance
   const handleDisconnect = async () => {
-    if (!instanceName) return
+    if (!instanceName || !instanceToken) return
 
     try {
-      // Evo Delete
-      await fetch(`${EVO_URL}/instance/delete/${instanceName}`, {
+      let delRes = await fetch(`${UAZAPI_URL}/instance`, {
         method: "DELETE",
-        headers: { "apikey": EVO_API_KEY as string }
+        headers: { "token": instanceToken }
       })
+      
+      if (!delRes.ok) {
+        await fetch(`${UAZAPI_URL}/instance/delete/${instanceName}`, {
+          method: "DELETE",
+          headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
+        })
+      }
 
-      // Supabase Delete
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         await supabase
@@ -428,9 +433,9 @@ export default function ConexoesPage() {
           .eq("instance_name", instanceName)
       }
 
-      // Reset State
       setIsConnected(false)
       setInstanceName(null)
+      setInstanceToken(null)
       setQrCodeBase64(null)
       setConnectionStatus("disconnected")
       toast.success("Instância desconectada")
@@ -523,7 +528,7 @@ export default function ConexoesPage() {
                     <CheckCircle2 className="h-16 w-16 text-green-500 relative z-10" />
                   </div>
                   <p className="mt-4 text-lg font-semibold text-green-400">Sistema Operante</p>
-                  <p className="text-xs text-green-500/70 uppercase tracking-widest mt-1">Conectado ao ProspektIA</p>
+                  <p className="text-xs text-green-500/70 uppercase tracking-widest mt-1">Conectado a Legado</p>
                 </div>
 
                 <div className="w-full space-y-3">
@@ -585,7 +590,7 @@ export default function ConexoesPage() {
 
             <div className="rounded-lg bg-yellow-500/10 p-3 mt-4 border border-yellow-500/20">
               <p className="text-xs text-yellow-500 flex items-start gap-2">
-                <span className="font-bold">⚠️ Importante:</span>
+                <span className="font-bold">Importante:</span>
                 Mantenha seu celular conectado à internet para garantir que o dispositivo será conectado corretamente.
               </p>
             </div>

@@ -118,7 +118,7 @@ export default function CampaignsPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-                        Campanhas
+                        Disparos
                     </h1>
                     <p className="mt-1 text-muted-foreground">Gerencie suas campanhas de prospecção agendadas</p>
                 </div>
