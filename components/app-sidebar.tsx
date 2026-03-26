@@ -54,11 +54,6 @@ const navigation = [
     icon: BrainCircuit,
   },
   {
-    name: "Ferramentas",
-    href: "/ferramentas",
-    icon: Wrench,
-  },
-  {
     name: "Minha Conta",
     href: "/conta",
     icon: User,

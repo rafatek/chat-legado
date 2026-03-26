@@ -15,7 +15,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bot, MessageSquare, Megaphone, Settings2, Power, Loader2, Calendar } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { AtendimentoConfigSheet } from "@/components/agents/atendimento-config-sheet"
-import { ProspectingConfigSheet } from "@/components/agents/prospecting-config-sheet"
 
 // Type for card summary data
 interface AgentSummary {
@@ -25,7 +24,7 @@ interface AgentSummary {
 
 export default function AgentsHubPage() {
   const [isAtendimentoSheetOpen, setIsAtendimentoSheetOpen] = useState(false)
-  const [isProspectingSheetOpen, setIsProspectingSheetOpen] = useState(false)
+  
 
   // Local state for dashboard cards (to show active status without opening sheet)
   const [atendimentoSummary, setAtendimentoSummary] = useState<AgentSummary | null>(null)
@@ -119,97 +118,12 @@ export default function AgentsHubPage() {
           </CardFooter>
         </Card>
 
-        {/* === CARD AGENTE PROSPECÇÃO === */}
-        <Card className="relative overflow-hidden border-emerald-500/20 bg-gradient-to-b from-card to-card/50 transition-all hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/5">
-          {/* Future status badge logic here if needed */}
-          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-              <Megaphone className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <CardTitle>Prospecção Ativa</CardTitle>
-              <CardDescription>
-                Busca novos clientes, envia mensagens iniciais e agenda reuniões.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4" />
-                <span>Outbound</span>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-900/20"
-              onClick={() => setIsProspectingSheetOpen(true)}
-            >
-              <Settings2 className="mr-2 h-4 w-4" />
-              Configurar Agente
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {/* === CARD SDR AGENDAMENTO (EM BREVE) === */}
-        <Card className="relative overflow-hidden border-blue-500/20 bg-gradient-to-b from-card to-card/50 transition-all opacity-80">
-          <div className="absolute top-0 right-0 p-4">
-            <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-              Em Breve
-            </Badge>
-          </div>
-
-          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-              <Calendar className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <CardTitle>SDR de Agendamento</CardTitle>
-              <CardDescription>
-                Essa IA será capaz de fazer agendamentos no Seu Google Agenda.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                <span>Google Agenda</span>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button
-              disabled
-              className="w-full bg-blue-600/50 text-white shadow-md shadow-blue-900/10 cursor-not-allowed"
-            >
-              Em Breve
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {/* === CARD NOVA LOJA === */}
-        <Card className="flex flex-col items-center justify-center border-dashed border-2 bg-transparent opacity-50 hover:opacity-80 hover:bg-muted/10 transition-all cursor-pointer">
-          <div className="flex flex-col items-center gap-2 py-10">
-            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-              <span className="text-2xl">+</span>
-            </div>
-            <h3 className="font-medium">Loja de Agentes</h3>
-            <p className="text-sm text-muted-foreground">Novos modelos em breve</p>
-          </div>
-        </Card>
-
       </div>
 
       {/* Sheets / Modals */}
       <AtendimentoConfigSheet
         open={isAtendimentoSheetOpen}
         onOpenChange={setIsAtendimentoSheetOpen}
-      />
-      <ProspectingConfigSheet
-        open={isProspectingSheetOpen}
-        onOpenChange={setIsProspectingSheetOpen}
       />
     </div>
   )
