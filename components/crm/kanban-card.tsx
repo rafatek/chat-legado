@@ -4,7 +4,8 @@ import { Draggable } from "@hello-pangea/dnd"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Lead } from "@/types/kanban"
-import { MessageSquare, MapPin, Instagram, FileText, CheckCircle2 } from "lucide-react"
+import { MessageSquare, MapPin, Instagram, FileText, CheckCircle2, Headphones } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 interface KanbanCardProps {
     lead: Lead
@@ -39,11 +40,23 @@ function OriginBadge({ origin }: { origin: string }) {
 }
 
 export function KanbanCard({ lead, index }: KanbanCardProps) {
+    const router = useRouter()
+
     const handleWhatsAppClick = (e: React.MouseEvent) => {
-        e.stopPropagation() // Prevent dragging when clicking button
+        e.stopPropagation()
         if (lead.whatsapp) {
             const cleanNumber = lead.whatsapp.replace(/\D/g, '')
             window.open(`https://wa.me/${cleanNumber}`, '_blank')
+        }
+    }
+
+    const handleAtenderClick = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (lead.whatsapp) {
+            const cleanNumber = lead.whatsapp.replace(/\D/g, '')
+            router.push(`/atendimento?phone=${cleanNumber}&name=${encodeURIComponent(lead.full_name)}`)
+        } else {
+            router.push('/atendimento')
         }
     }
 
@@ -100,15 +113,24 @@ export function KanbanCard({ lead, index }: KanbanCardProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="mt-auto pt-2 border-t border-white/5 flex items-center justify-between">
+                    <div className="mt-auto pt-2 border-t border-white/5 flex items-center gap-1">
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-full text-xs text-muted-foreground hover:text-green-500 hover:bg-green-500/10"
+                            className="h-8 flex-1 text-xs text-muted-foreground hover:text-green-500 hover:bg-green-500/10"
                             onClick={handleWhatsAppClick}
                         >
-                            <MessageSquare className="w-3 h-3 mr-2" />
+                            <MessageSquare className="w-3 h-3 mr-1.5" />
                             WhatsApp
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 flex-1 text-xs text-muted-foreground hover:text-[#00A3FF] hover:bg-[#00A3FF]/10"
+                            onClick={handleAtenderClick}
+                        >
+                            <Headphones className="w-3 h-3 mr-1.5" />
+                            Atender
                         </Button>
                     </div>
                 </div>

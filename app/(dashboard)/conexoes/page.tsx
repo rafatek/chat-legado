@@ -220,45 +220,60 @@ export default function ConexoesPage() {
       if (existingConn && existingConn.instance_name) {
         console.log(`Encontrada instância antiga: ${existingConn.instance_name}. Iniciando limpeza...`)
         try {
-          // Tentativa primária por Admin Token (Mais garantido em UazAPI)
           let delRes = await fetch(`${UAZAPI_URL}/instance/delete/${existingConn.instance_name}`, {
             method: "DELETE",
             headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
           })
-          
           if (!delRes.ok && existingConn.instance_key) {
-             // Fallback
-             delRes = await fetch(`${UAZAPI_URL}/instance`, {
-               method: "DELETE",
-               headers: { "token": existingConn.instance_key }
-             })
+            delRes = await fetch(`${UAZAPI_URL}/instance`, {
+              method: "DELETE",
+              headers: { "token": existingConn.instance_key }
+            })
           }
-
-          if (delRes.ok) {
-            console.log("Instância antiga deletada na API com sucesso.")
-          } else {
-            console.warn("Falha ao deletar instância antiga na API.")
-          }
+          if (delRes.ok) console.log("Instância antiga deletada na API com sucesso.")
+          else console.warn("Falha ao deletar instância antiga na API.")
         } catch (delErr) {
           console.error("Erro ao tentar deletar instância antiga:", delErr)
         }
-
-        await supabase
-          .from("whatsapp_connections")
-          .delete()
-          .eq("user_id", user.id)
+        await supabase.from("whatsapp_connections").delete().eq("user_id", user.id)
       }
       // --- ZOMBIE CLEANUP END ---
+
+      // --- WEBHOOK TOKEN: busca ou gera ---
+      let currentWebhookToken = webhookToken
+      if (!currentWebhookToken) {
+        // Gera token se não existir
+        currentWebhookToken = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0
+          const v = c === 'x' ? r : (r & 0x3 | 0x8)
+          return v.toString(16)
+        })
+        await supabase.from('profiles').update({ webhook_token: currentWebhookToken }).eq('id', user.id)
+        setWebhookToken(currentWebhookToken)
+      }
+
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+      const webhookUrl = `${appUrl}/api/webhook/${currentWebhookToken}`
+      console.log('Webhook URL que será registrada:', webhookUrl)
 
       const shortId = user.id.slice(0, 3).toUpperCase()
       const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase()
       const newInstanceName = `LEG-${shortId}-${randomSuffix}`
 
       const payload = {
-        "name": newInstanceName,
-        "systemName": "apilocal",
-        "fingerprintProfile": "chrome",
-        "browser": "chrome"
+        name: newInstanceName,
+        systemName: "apilocal",
+        fingerprintProfile: "chrome",
+        browser: "chrome",
+        // Registra o webhook na criação da instância
+        webhook: webhookUrl,
+        webhookEvents: [
+          "messages.upsert",
+          "messages.update",
+          "message",
+          "MESSAGES_UPSERT",
+        ],
+        webhookByEvents: false,
       }
 
       console.log('Enviando para:', `${UAZAPI_URL}/instance/init`)
@@ -273,8 +288,8 @@ export default function ConexoesPage() {
       })
 
       const data = await res.json()
-      console.log("Create Response Base:", res.ok, res.status)
-      
+      console.log("Create Response Base:", res.ok, res.status, data)
+
       let token = ""
       if (res.ok && data.token) {
         token = data.token
@@ -284,10 +299,10 @@ export default function ConexoesPage() {
         token = data.token || "ERRO"
       }
 
-      const isSuccess = res.ok && token !== "ERRO";
+      const isSuccess = res.ok && token !== "ERRO"
 
       if (isSuccess) {
-        console.log("Sucesso. Prosseguindo...");
+        console.log("Sucesso. Prosseguindo...")
 
         const { error: dbError } = await supabase.from("whatsapp_connections").upsert({
           user_id: user.id,
@@ -305,6 +320,8 @@ export default function ConexoesPage() {
         setInstanceName(newInstanceName)
         setInstanceToken(token)
 
+        // Tenta também configurar webhook explicitamente (fallback)
+        setTimeout(() => registerWebhook(token, webhookUrl), 500)
         setTimeout(() => fetchQrCode(newInstanceName, token), 1000)
 
       } else {
@@ -318,6 +335,46 @@ export default function ConexoesPage() {
     } finally {
       setIsCreating(false)
     }
+  }
+
+  // Registra/reregistra o webhook na instância já existente
+  const registerWebhook = async (token: string, url: string) => {
+    try {
+      // Tenta múltiplos endpoints comuns no UazAPI
+      const endpoints = [
+        { path: '/webhook/set', method: 'POST', body: { url, enabled: true, events: ['messages.upsert', 'message'] } },
+        { path: '/webhook', method: 'POST', body: { url, enabled: true } },
+        { path: '/instance/webhook', method: 'PUT', body: { webhookUrl: url, enabled: true } },
+      ]
+
+      for (const ep of endpoints) {
+        try {
+          const r = await fetch(`${UAZAPI_URL}${ep.path}`, {
+            method: ep.method,
+            headers: { 'Content-Type': 'application/json', 'token': token },
+            body: JSON.stringify(ep.body),
+          })
+          if (r.ok) {
+            console.log(`Webhook registrado com sucesso via ${ep.path}`)
+            return
+          }
+        } catch { /* tenta próximo */ }
+      }
+      console.warn('Não foi possível registrar webhook via API direta. Usando URL configurada na criação.')
+    } catch (e) {
+      console.warn('registerWebhook error (non-critical):', e)
+    }
+  }
+
+  const handleReconfigureWebhook = async () => {
+    if (!instanceToken || !webhookToken) {
+      toast.error("Sem token de instância ou webhook configurado")
+      return
+    }
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+    const url = `${appUrl}/api/webhook/${webhookToken}`
+    await registerWebhook(instanceToken, url)
+    toast.success("Tentativa de reconfiguração enviada! Verifique o console.")
   }
 
   // 4. Polling
@@ -547,6 +604,15 @@ export default function ConexoesPage() {
                 <Button variant="destructive" className="w-full gap-2 border-red-900/50 hover:bg-red-900/20 hover:text-red-400" onClick={handleDisconnect}>
                   <Trash2 className="h-4 w-4" />
                   Desconectar WhatsApp
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 border-white/10 text-gray-400 hover:text-white hover:bg-white/5"
+                  onClick={handleReconfigureWebhook}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Reconfigurar Webhook
                 </Button>
               </div>
             )}

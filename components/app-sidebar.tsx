@@ -10,6 +10,7 @@ import {
   FolderKanban,
   LogOut,
   Megaphone,
+  MessageSquare,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button"
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "CRM", href: "/crm", icon: FolderKanban },
+  { name: "Atendimento", href: "/atendimento", icon: MessageSquare },
   { name: "Disparos", href: "/campanhas", icon: Megaphone },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
   { name: "Agente IA", href: "/agente", icon: BrainCircuit },
