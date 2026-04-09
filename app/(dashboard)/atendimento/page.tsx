@@ -305,6 +305,48 @@ export default function AtendimentoPage() {
         return
       }
 
+      // 2. Upsert do lead no CRM/Kanban — mantém tudo sincronizado
+      try {
+        const { data: existingLead } = await supabase
+          .from("leads")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("whatsapp", phone)
+          .maybeSingle()
+
+        if (!existingLead) {
+          // Busca a primeira coluna (position 0) para colocar o lead
+          const { data: firstCol } = await supabase
+            .from("kanban_columns")
+            .select("id")
+            .eq("user_id", userId)
+            .order("position", { ascending: true })
+            .limit(1)
+            .maybeSingle()
+
+          await supabase.from("leads").insert({
+            user_id: userId,
+            full_name: newConvName.trim() || phone,
+            whatsapp: phone,
+            origin: "WhatsApp",
+            column_id: firstCol?.id || null,
+            last_message: firstMsg,
+            last_message_at: new Date().toISOString(),
+            conversation_id: conv.id,
+          })
+        } else {
+          // Lead já existe — apenas atualiza last_message e vincula conversa
+          await supabase.from("leads").update({
+            last_message: firstMsg,
+            last_message_at: new Date().toISOString(),
+            conversation_id: conv.id,
+          }).eq("id", existingLead.id)
+        }
+      } catch (leadErr) {
+        console.warn("Aviso: não foi possível sincronizar lead no CRM:", leadErr)
+        // Não bloqueia o fluxo — a conversa já foi criada
+      }
+
       // 2. Envia a primeira mensagem via UazAPI
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch("/api/inbox/send", {

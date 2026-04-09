@@ -48,9 +48,9 @@ export default function ConexoesPage() {
           if (connection.status === "connected") {
             setIsConnected(true)
             setConnectionStatus("open")
+            // Busca o número de telefone conectado
+            fetchPhoneNumber(connection.instance_key)
           } else {
-            // If exists but not connected, maybe we need to fetch QR or check state
-            setInstanceName(connection.instance_name)
             checkUazapiState(connection.instance_name, connection.instance_key)
           }
         }
@@ -151,31 +151,32 @@ export default function ConexoesPage() {
     try {
       const res = await fetch(`${UAZAPI_URL}/instance/status`, {
         method: "GET",
-        headers: {
-          "token": token
-        }
+        headers: { "token": token }
       })
       const data = await res.json()
-      
-      const isConnectedApi = data?.connected === true || 
-                             data?.status?.connected === true || 
-                             data?.instance?.status === "connected" || 
-                             data?.state === "open" || 
+
+      const isConnectedApi = data?.connected === true ||
+                             data?.status?.connected === true ||
+                             data?.instance?.status === "connected" ||
+                             data?.state === "open" ||
                              data?.state === "connected" ||
-                             data?.instance?.state === "open";
-                             
-      const stateString = data?.state || data?.instance?.state || data?.instance?.status || "close";
+                             data?.instance?.state === "open"
+
+      const stateString = data?.state || data?.instance?.state || data?.instance?.status || "close"
+
+      // Extrair número de telefone conectado
+      const phone = data?.phone || data?.instance?.phone || data?.wid?.user || data?.me?.id?.replace('@s.whatsapp.net', '') || null
+      if (phone) setPhoneNumber(phone)
 
       if (isConnectedApi) {
         setIsConnected(true)
         setConnectionStatus("open")
         await updateSupabaseStatus(instName, "connected")
+        fetchPhoneNumber(token)
       } else {
         setIsConnected(false)
         setConnectionStatus(stateString)
-        if (!isConnectedApi) {
-          fetchQrCode(instName, token)
-        }
+        fetchQrCode(instName, token)
       }
     } catch (e) {
       console.error("Error checking UazAPI state:", e)
@@ -203,6 +204,25 @@ export default function ConexoesPage() {
     }
   }
 
+  // Busca o número de telefone via /instance/status
+  const fetchPhoneNumber = async (token: string) => {
+    try {
+      const res = await fetch(`${UAZAPI_URL}/instance/status`, {
+        method: "GET",
+        headers: { "token": token }
+      })
+      const data = await res.json()
+      // Campo confirmado: instance.owner retorna o número puro (ex: "5511997703248")
+      const raw = data?.instance?.owner || data?.status?.jid || null
+      if (raw) {
+        const cleaned = String(raw).replace('@s.whatsapp.net', '').replace(/\D/g, '')
+        if (cleaned.length >= 10) setPhoneNumber(cleaned)
+      }
+    } catch (e) {
+      console.warn("[PhoneNumber] Erro:", e)
+    }
+  }
+
   // 3. Create Instance
   const handleGenerateQRCode = async () => {
     setIsCreating(true)
@@ -210,34 +230,59 @@ export default function ConexoesPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // --- ZOMBIE CLEANUP START ---
+      // --- ZOMBIE CLEANUP: Deletar instância antiga ANTES de criar nova ---
       const { data: existingConn } = await supabase
         .from("whatsapp_connections")
         .select("instance_name, instance_key")
         .eq("user_id", user.id)
         .single()
 
-      if (existingConn && existingConn.instance_name) {
-        console.log(`Encontrada instância antiga: ${existingConn.instance_name}. Iniciando limpeza...`)
+      if (existingConn?.instance_name) {
+        const oldName = existingConn.instance_name
+        const oldToken = existingConn.instance_key
+        console.log(`[Cleanup] Instância antiga detectada: ${oldName}. Deletando...`)
+
+        // Tentativa 1: delete por nome com admintoken (mais confiável)
         try {
-          let delRes = await fetch(`${UAZAPI_URL}/instance/delete/${existingConn.instance_name}`, {
+          const del1 = await fetch(`${UAZAPI_URL}/instance/${oldName}`, {
             method: "DELETE",
             headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
           })
-          if (!delRes.ok && existingConn.instance_key) {
-            delRes = await fetch(`${UAZAPI_URL}/instance`, {
-              method: "DELETE",
-              headers: { "token": existingConn.instance_key }
-            })
-          }
-          if (delRes.ok) console.log("Instância antiga deletada na API com sucesso.")
-          else console.warn("Falha ao deletar instância antiga na API.")
-        } catch (delErr) {
-          console.error("Erro ao tentar deletar instância antiga:", delErr)
+          console.log(`[Cleanup] DELETE /instance/${oldName} → ${del1.status}`)
+        } catch (e) {
+          console.warn("[Cleanup] Tentativa 1 falhou:", e)
         }
+
+        // Tentativa 2: delete com admintoken no path legado
+        try {
+          const del2 = await fetch(`${UAZAPI_URL}/instance/delete/${oldName}`, {
+            method: "DELETE",
+            headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
+          })
+          console.log(`[Cleanup] DELETE /instance/delete/${oldName} → ${del2.status}`)
+        } catch (e) {
+          console.warn("[Cleanup] Tentativa 2 falhou:", e)
+        }
+
+        // Tentativa 3: delete com token da própria instância (fallback)
+        if (oldToken) {
+          try {
+            const del3 = await fetch(`${UAZAPI_URL}/instance`, {
+              method: "DELETE",
+              headers: { "token": oldToken }
+            })
+            console.log(`[Cleanup] DELETE /instance (com token) → ${del3.status}`)
+          } catch (e) {
+            console.warn("[Cleanup] Tentativa 3 falhou:", e)
+          }
+        }
+
+        // Forçar limpeza no Supabase independente do resultado da API
         await supabase.from("whatsapp_connections").delete().eq("user_id", user.id)
+        console.log("[Cleanup] Supabase limpo. Aguardando 1s antes de criar nova instância...")
+        await new Promise(resolve => setTimeout(resolve, 1000))
       }
-      // --- ZOMBIE CLEANUP END ---
+      // --- FIM DO CLEANUP --- END ---
 
       // --- WEBHOOK TOKEN: busca ou gera ---
       let currentWebhookToken = webhookToken
@@ -396,14 +441,18 @@ export default function ConexoesPage() {
 
         const data = await res.json()
         
-        const isConnectedApi = data?.connected === true || 
-                               data?.status?.connected === true || 
-                               data?.instance?.status === "connected" || 
-                               data?.state === "open" || 
+        const isConnectedApi = data?.connected === true ||
+                               data?.status?.connected === true ||
+                               data?.instance?.status === "connected" ||
+                               data?.state === "open" ||
                                data?.state === "connected" ||
-                               data?.instance?.state === "open";
-                               
-        const stateString = data?.state || data?.instance?.state || data?.instance?.status || "disconnected";
+                               data?.instance?.state === "open"
+
+        const stateString = data?.state || data?.instance?.state || data?.instance?.status || "disconnected"
+
+        // Extrair número de telefone conectado
+        const phone = data?.phone || data?.instance?.phone || data?.wid?.user || data?.me?.id?.replace('@s.whatsapp.net', '') || null
+        if (phone) setPhoneNumber(phone)
 
         if (isConnectedApi) {
           if (!isConnected) {
@@ -411,6 +460,7 @@ export default function ConexoesPage() {
             setConnectionStatus('open')
             setQrCodeBase64(null)
             await updateSupabaseStatus(instanceName, "connected")
+            fetchPhoneNumber(instanceToken)
             toast.success("WhatsApp Conectado!")
           }
         } else {
@@ -418,8 +468,8 @@ export default function ConexoesPage() {
             console.log("Detectada desconexão. Estado:", stateString)
             setIsConnected(false)
             setConnectionStatus(stateString)
+            setPhoneNumber(null)
             setQrCodeBase64(null)
-
             await updateSupabaseStatus(instanceName, "disconnected")
             toast.warning("Conexão perdida. Reconecte.")
           }
@@ -589,6 +639,14 @@ export default function ConexoesPage() {
                 </div>
 
                 <div className="w-full space-y-3">
+                  {phoneNumber && (
+                    <div className="flex justify-between items-center rounded-lg border border-green-500/30 p-3 bg-green-500/5">
+                      <span className="text-sm text-muted-foreground flex items-center gap-2">
+                        <Smartphone className="h-4 w-4 text-green-400" /> Número Conectado
+                      </span>
+                      <span className="text-sm font-bold font-mono text-green-400">+{phoneNumber}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center rounded-lg border border-border p-3 bg-muted/20">
                     <span className="text-sm text-muted-foreground flex items-center gap-2">
                       <Smartphone className="h-4 w-4" /> Identificador
@@ -605,16 +663,8 @@ export default function ConexoesPage() {
                   <Trash2 className="h-4 w-4" />
                   Desconectar WhatsApp
                 </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full gap-2 border-white/10 text-gray-400 hover:text-white hover:bg-white/5"
-                  onClick={handleReconfigureWebhook}
-                >
-                  <RefreshCcw className="h-4 w-4" />
-                  Reconfigurar Webhook
-                </Button>
               </div>
+
             )}
           </CardContent>
         </Card>
@@ -664,67 +714,9 @@ export default function ConexoesPage() {
         </Card>
       </div>
 
-      {/* Webhook Configuration Card */}
-      <Card className="border-indigo-500/20 bg-indigo-500/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Webhook className="h-5 w-5 text-indigo-500" />
-            Webhook Inteligente
-          </CardTitle>
-          <CardDescription>
-            Receba leads automaticamente de diversas fontes. O sistema identifica e padroniza os dados.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-200/20">
-              <CheckCircle2 className="mr-1 h-3 w-3" /> Extração Google Maps
-            </Badge>
-            <Badge variant="secondary" className="bg-pink-500/10 text-pink-500 border-pink-200/20">
-              <CheckCircle2 className="mr-1 h-3 w-3" /> Instagrapi / Instagram
-            </Badge>
-            <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-200/20">
-              <CheckCircle2 className="mr-1 h-3 w-3" /> Receita WS / CNPJ
-            </Badge>
-          </div>
+      {/* Webhook configurado automaticamente — sem exposição ao cliente */}
 
-          <div className="flex flex-col gap-3">
-            <label className="text-sm font-medium">Sua URL de Webhook</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  readOnly
-                  value={webhookToken ? `${process.env.NEXT_PUBLIC_APP_URL || "https://app.prospektia.com"}/api/webhook/${webhookToken}` : "Gere um token para obter a URL"}
-                  className="bg-background pr-24 font-mono text-sm"
-                />
-              </div>
-              <Button onClick={handleCopyWebhookUrl} disabled={!webhookToken} variant="outline" className="shrink-0 gap-2">
-                <Copy className="h-4 w-4" /> Copiar
-              </Button>
-            </div>
-            {!webhookToken && (
-              <Button onClick={handleGenerateWebhookToken} disabled={webhookLoading} className="w-fit gap-2">
-                <RefreshCcw className={`h-4 w-4 ${webhookLoading ? 'animate-spin' : ''}`} />
-                Gerar Token de Acesso
-              </Button>
-            )}
-            {webhookToken && (
-              <div className="text-xs text-muted-foreground flex items-center justify-between">
-                <span>Token ativo e seguro.</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto p-0 text-red-400 hover:text-red-500 hover:bg-transparent"
-                  onClick={handleGenerateWebhookToken}
-                  disabled={webhookLoading}
-                >
-                  Regerar Token (Revoga o anterior)
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+
 
       <style jsx>{`
         @keyframes scan {

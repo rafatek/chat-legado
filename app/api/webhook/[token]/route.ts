@@ -154,7 +154,7 @@ export async function POST(
 // =============================================
 async function handleIncomingMessage(token: string, body: any) {
   try {
-    // Find user by webhook_token
+    // 1. Find user by webhook_token
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id')
@@ -168,7 +168,7 @@ async function handleIncomingMessage(token: string, body: any) {
 
     const userId = profile.id
 
-    // Extract message data from different UazAPI event formats
+    // 2. Extract message data from different UazAPI event formats
     let senderPhone = ''
     let senderName = ''
     let messageContent = ''
@@ -210,12 +210,11 @@ async function handleIncomingMessage(token: string, body: any) {
     }
 
     if (!senderPhone || (!messageContent && !body.data?.message) || fromMe) {
-      // Ignore outgoing messages from UazAPI events (we save them ourselves)
       console.log("Skipping: fromMe or missing data")
       return
     }
 
-    // Upsert conversation
+    // 3. Upsert conversation (Inbox)
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .upsert(
@@ -225,7 +224,7 @@ async function handleIncomingMessage(token: string, body: any) {
           contact_name: senderName,
           last_message: messageContent,
           last_message_at: new Date().toISOString(),
-          unread_count: 1, // Will be incremented below
+          unread_count: 1,
           is_open: true,
         },
         {
@@ -244,7 +243,86 @@ async function handleIncomingMessage(token: string, body: any) {
     // Increment unread_count
     await supabase.rpc('increment_unread', { conv_id: conversation.id })
 
-    // Insert message
+    // =============================================
+    // 4. CRM Integration: Link lead ↔ conversation
+    // =============================================
+
+    // Normalize phone for comparison (digits only, strip country code if 13 digits starting with 55)
+    const normalizedPhone = senderPhone.length === 13 && senderPhone.startsWith('55')
+      ? senderPhone.slice(2)  // remove country code for BR numbers
+      : senderPhone
+
+    // Lookup existing lead by whatsapp number (try with and without country code)
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id, whatsapp, conversation_id')
+      .eq('user_id', userId)
+      .or(`whatsapp.eq.${senderPhone},whatsapp.eq.${normalizedPhone}`)
+      .maybeSingle()
+
+    let leadId: string | null = null
+
+    if (existingLead) {
+      // Lead already exists → update last_message and timestamp
+      leadId = existingLead.id
+      await supabase
+        .from('leads')
+        .update({
+          last_message: messageContent,
+          last_message_at: new Date().toISOString(),
+          conversation_id: conversation.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', leadId)
+
+      console.log(`CRM: Updated existing lead ${leadId} with last_message`)
+
+    } else {
+      // New contact → create lead in "Novos Leads" (position = 0)
+      const { data: firstColumn } = await supabase
+        .from('kanban_columns')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('position', 0)
+        .single()
+
+      if (firstColumn) {
+        const { data: newLead, error: leadError } = await supabase
+          .from('leads')
+          .insert({
+            user_id: userId,
+            column_id: firstColumn.id,
+            full_name: senderName,
+            whatsapp: normalizedPhone,
+            origin: 'WhatsApp',
+            message_sent: false,
+            last_message: messageContent,
+            last_message_at: new Date().toISOString(),
+            conversation_id: conversation.id,
+          })
+          .select('id')
+          .single()
+
+        if (!leadError && newLead) {
+          leadId = newLead.id
+          console.log(`CRM: Created new lead ${leadId} for ${senderPhone} in "Novos Leads"`)
+        } else {
+          console.error("CRM: Failed to create lead:", leadError)
+        }
+      } else {
+        console.warn("CRM: No column with position=0 found for user", userId)
+      }
+    }
+
+    // 5. Link lead_id back into conversation (if not already set)
+    if (leadId && conversation.lead_id !== leadId) {
+      await supabase
+        .from('conversations')
+        .update({ lead_id: leadId })
+        .eq('id', conversation.id)
+    }
+
+    // 6. Save message with lead_id linked
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
       user_id: userId,
@@ -252,10 +330,13 @@ async function handleIncomingMessage(token: string, body: any) {
       from_me: false,
       whatsapp_message_id: messageId,
       status: 'received',
+      lead_id: leadId,
     })
 
-    console.log(`Message from ${senderPhone} saved to conversation ${conversation.id}`)
+    console.log(`Message from ${senderPhone} saved → conversation ${conversation.id} → lead ${leadId}`)
+
   } catch (err) {
     console.error("Error handling incoming message:", err)
   }
 }
+

@@ -23,6 +23,7 @@ import {
 export default function DashboardPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [loadingName, setLoadingName] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [fullName, setFullName] = useState<string | null>(null)
 
@@ -49,15 +50,27 @@ export default function DashboardPage() {
         }
         setUser(user)
 
-        // BUSCA O NOME REAL NO PERFIL
-        const { data: profile } = await supabase
+        // EXIBE O NOME IMEDIATAMENTE do user_metadata (sem esperar o banco)
+        if (user.user_metadata?.full_name) {
+          setFullName(user.user_metadata.full_name)
+          setLoadingName(false)
+        }
+
+        // BUSCA NO PERFIL em paralelo (atualiza se vier diferente)
+        supabase
           .from('profiles')
           .select('full_name')
           .eq('id', user.id)
           .single()
-        
-        setFullName(profile?.full_name || user.user_metadata?.full_name || "Usuário")
-        
+          .then(({ data: profile }: { data: { full_name: string } | null }) => {
+            if (profile?.full_name) {
+              setFullName(profile.full_name)
+            } else if (!user.user_metadata?.full_name) {
+              setFullName("Usuário")
+            }
+            setLoadingName(false)
+          })
+
         fetchDashboardData(user.id)
       } catch (error) {
         console.error("Error checking auth:", error)
@@ -118,8 +131,14 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 pb-10 bg-[#050508] min-h-screen text-white">
       <div>
-        <h1 className="text-3xl font-black tracking-tight uppercase italic">
-          Olá, {fullName?.split(' ')[0] || 'Julio'}<span className="text-[#00A3FF]">!</span> {saudacao}<span className="text-[#00A3FF]">.</span>
+        <h1 className="text-3xl font-black tracking-tight uppercase italic flex items-center gap-2">
+          Olá,&nbsp;
+          {loadingName ? (
+            <span className="inline-block h-8 w-28 bg-white/10 rounded animate-pulse align-middle" />
+          ) : (
+            <span>{fullName?.split(' ')[0]}</span>
+          )}
+          <span className="text-[#00A3FF]">!</span>&nbsp;{saudacao}<span className="text-[#00A3FF]">.</span>
         </h1>
         <p className="text-gray-600 uppercase text-[10px] font-bold tracking-[0.4em] mt-1">Legado Performance Digital • Dashboard</p>
       </div>

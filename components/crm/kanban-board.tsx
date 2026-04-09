@@ -34,6 +34,7 @@ interface KanbanBoardProps {
 }
 
 const ORIGINS = [
+    "WhatsApp",
     "Instagram",
     "Google Maps",
     "Extração CNPJ",
