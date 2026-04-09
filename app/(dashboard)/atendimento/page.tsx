@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import {
@@ -121,7 +121,9 @@ export default function AtendimentoPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const processedUrlRef = useRef(false)
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   // ---- Load User ----
   useEffect(() => {
@@ -132,14 +134,29 @@ export default function AtendimentoPage() {
 
   // ---- Auto-open from CRM (?phone=...&name=...) ----
   useEffect(() => {
+    if (isLoadingConvs) return;
+    if (processedUrlRef.current) return;
+
     const phone = searchParams.get('phone')
     const name = searchParams.get('name')
     if (phone) {
-      setNewConvPhone(phone)
-      setNewConvName(name || '')
-      setIsNewConvOpen(true)
+      processedUrlRef.current = true;
+      const cleanPhone = phone.replace(/\D/g, "")
+      const existingConv = conversations.find(c => c.contact_phone === cleanPhone)
+
+      if (existingConv) {
+        setSelectedConv(existingConv)
+        setMessages([])
+        setIsMobileView(true)
+      } else {
+        setNewConvPhone(phone)
+        setNewConvName(name || '')
+        setIsNewConvOpen(true)
+      }
+      
+      router.replace('/atendimento')
     }
-  }, [searchParams])
+  }, [searchParams, conversations, isLoadingConvs, router])
 
   // ---- Load Conversations ----
   const loadConversations = useCallback(async () => {
