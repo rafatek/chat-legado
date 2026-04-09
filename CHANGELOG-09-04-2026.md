@@ -16,7 +16,10 @@ O foco do dia foi unificar o sistema de **Atendimento**, **CRM (Kanban)** e a in
 *   **Unificação de Abas e Botões:** A aba lateral antes chamada de "CRM" foi renomeada para **"CRM/Kanban"**. No cartão do Kanban, o botão de "WhatsApp" redireciona inteligentemente e sem abrir nova guia (`wa.me`) para o módulo interno `/atendimento`, compartilhando dados via URL. Removemos o segundo botão "Atender" pois já era redundante.
 *   **Criação de Leads de Forma Síncrona:** Criamos a ponte que faltava! Antes o Atendimento não conversava com os Leads. Agora, sempre que o usuário inicia uma Nova Conversa no Atendimento, o sistema automaticamente aciona um `upsert` na tabela do CRM (`leads`), colocando o contato virgem na coluna inicial "Novos Leads" com a *origin* `'WhatsApp'`.
 
-### 3. Modificações de Banco de Dados (Supabase & SQL)
+### 3. Ajustes Visuais e Identidade
+*   **Atualização de Logo:** Substituímos o arquivo `apple-icon.png` por uma versão otimizada com fundo transparente, garantindo que o logo da Legado seja renderizado perfeitamente, sem o bloco opaco nas bordas, aprimorando o visual interno da plataforma.
+
+### 4. Modificações de Banco de Dados (Supabase & SQL)
 Realizamos ajustes agressivos nas constraints nativas para abraçar todas as integrações atuais.
 
 *   **Expansão da Constraint (origin):** A tabela rejeitava cadastros de Leads novos feitos pelo Atendimento porque a restrição da origin (`leads_origin_check`) não previa redes dinâmicas. Normalizamos contatos antigos quebrados (NULL e "Anúncios" viraram "Outros") e expandimos a regra para aceitar `'WhatsApp'`.
