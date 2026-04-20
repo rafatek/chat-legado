@@ -3,10 +3,12 @@
 import { useState } from "react"
 import { DragDropContext, DropResult, Droppable, Draggable } from "@hello-pangea/dnd"
 import { KanbanColumn } from "./kanban-column"
-import { Column } from "@/types/kanban"
+import { Column, Label as KanbanLabel } from "@/types/kanban"
 import { Button } from "@/components/ui/button"
 import { Plus, Loader2, UserPlus } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { LabelManager } from "./label-manager"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -31,6 +33,7 @@ import {
 
 interface KanbanBoardProps {
     initialColumns: Column[]
+    availableLabels?: KanbanLabel[]
 }
 
 const ORIGINS = [
@@ -43,7 +46,9 @@ const ORIGINS = [
 
 
 
-export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
+export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoardProps) {
+    const router = useRouter()
+    
     // Board State
     const [columns, setColumns] = useState<Column[]>(initialColumns)
     const [isDeleting, setIsDeleting] = useState(false)
@@ -52,6 +57,7 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
     // Add Column State
     const [isAddColumnOpen, setIsAddColumnOpen] = useState(false)
     const [newColumnTitle, setNewColumnTitle] = useState("")
+    const [newColumnLabelId, setNewColumnLabelId] = useState<string>("none")
     const [isCreatingColumn, setIsCreatingColumn] = useState(false)
 
     // New Lead State
@@ -201,7 +207,8 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                 .insert({
                     title: title,
                     position: newPosition,
-                    user_id: session.user.id
+                    user_id: session.user.id,
+                    linked_label_id: newColumnLabelId === "none" ? null : newColumnLabelId
                 })
                 .select()
                 .single()
@@ -213,12 +220,30 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                 toast.success("Coluna criada!")
                 setIsAddColumnOpen(false)
                 setNewColumnTitle("")
+                setNewColumnLabelId("none")
             }
         } catch (error: any) {
             console.error("Column create error:", error)
             toast.error("Erro ao criar coluna")
         } finally {
             setIsCreatingColumn(false)
+        }
+    }
+
+    const handleRenameColumn = async (columnId: string, newTitle: string) => {
+        try {
+            const { error } = await supabase
+                .from('kanban_columns')
+                .update({ title: newTitle })
+                .eq('id', columnId)
+
+            if (error) throw error
+
+            setColumns(prev => prev.map(c => c.id === columnId ? { ...c, title: newTitle } : c))
+            toast.success("Coluna renomeada!")
+        } catch (error) {
+            console.error("Rename column error:", error)
+            toast.error("Erro ao renomear coluna")
         }
     }
 
@@ -354,6 +379,11 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                     {/* Placeholder */}
                 </div>
                 <div className="flex items-center gap-2">
+                    <LabelManager 
+                        availableLabels={availableLabels} 
+                        onLabelsChange={() => router.refresh()} 
+                    />
+
                     {/* Add Column Button */}
                     <Dialog open={isAddColumnOpen} onOpenChange={setIsAddColumnOpen}>
                         <DialogTrigger asChild>
@@ -379,6 +409,25 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                                         className="col-span-3"
                                         placeholder="Ex: Em Negociação"
                                     />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4 mt-2">
+                                    <Label htmlFor="col-tag" className="text-right text-xs text-muted-foreground leading-tight">Automação (Tag)</Label>
+                                    <Select value={newColumnLabelId} onValueChange={setNewColumnLabelId}>
+                                        <SelectTrigger className="col-span-3 h-9">
+                                            <SelectValue placeholder="Nenhuma" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">Nenhuma</SelectItem>
+                                            {availableLabels?.map(label => (
+                                                <SelectItem key={label.id} value={label.id}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: label.color }} />
+                                                        {label.title}
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
                             <DialogFooter>
@@ -471,6 +520,9 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                                             >
                                                 <KanbanColumn
                                                     column={col}
+                                                    availableLabels={availableLabels}
+                                                    isDeletable={index !== 0}
+                                                    onRename={handleRenameColumn}
                                                     onDelete={(id) => {
                                                         const c = columns.find(x => x.id === id)
                                                         if (c) setColumnToDelete(c)

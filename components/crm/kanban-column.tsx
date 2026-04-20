@@ -1,35 +1,104 @@
 import { Droppable } from "@hello-pangea/dnd"
 import { KanbanCard } from "./kanban-card"
-import { Column } from "@/types/kanban"
+import { Column, Label as KanbanLabel } from "@/types/kanban"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2 } from "lucide-react"
+import { Trash2, Edit2, Loader2, Check } from "lucide-react"
+import { useState } from "react"
 
 interface KanbanColumnProps {
     column: Column
     onDelete?: (columnId: string) => void
+    onRename?: (columnId: string, newTitle: string) => Promise<void>
+    availableLabels?: KanbanLabel[]
+    isDeletable?: boolean // nova prop
 }
 
-export function KanbanColumn({ column, onDelete }: KanbanColumnProps) {
-    const isProtected = ["Novos Leads", "Fechados"].includes(column.title)
+export function KanbanColumn({ column, onDelete, onRename, availableLabels = [], isDeletable = true }: KanbanColumnProps) {
+    const linkedLabel = availableLabels.find(l => l.id === column.linked_label_id)
+    
+    const [isEditing, setIsEditing] = useState(false)
+    const [editTitle, setEditTitle] = useState(column.title)
+    const [isSaving, setIsSaving] = useState(false)
+
+    const handleSaveTitle = async () => {
+        if (editTitle.trim() === "" || editTitle === column.title) {
+            setIsEditing(false)
+            setEditTitle(column.title)
+            return
+        }
+        setIsSaving(true)
+        if (onRename) {
+            await onRename(column.id, editTitle)
+        }
+        setIsSaving(false)
+        setIsEditing(false)
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            handleSaveTitle()
+        } else if (e.key === "Escape") {
+            setIsEditing(false)
+            setEditTitle(column.title)
+        }
+    }
 
     return (
         <div className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
             {/* Column Header */}
-            <div className="flex items-center justify-between p-4 mb-3 rounded-lg bg-[#111114] border border-white/5">
-                <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-sm text-gray-200">{column.title}</h3>
-                    <Badge variant="secondary" className="text-xs bg-white/5 hover:bg-white/10 text-gray-400">
-                        {column.leads.length}
-                    </Badge>
+            <div className="flex items-center justify-between p-4 mb-3 rounded-lg bg-[#111114] border border-white/5 group">
+                <div className="flex flex-col gap-1.5 flex-1 mr-2">
+                    <div className="flex items-center gap-2">
+                        {isEditing ? (
+                            <div className="flex items-center w-full gap-1">
+                                <input 
+                                    autoFocus
+                                    value={editTitle}
+                                    onChange={(e) => setEditTitle(e.target.value)}
+                                    onBlur={handleSaveTitle}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={isSaving}
+                                    className="bg-black/50 text-sm font-semibold text-white px-2 py-1 rounded w-full outline-none border border-white/20 focus:border-[#00A3FF]"
+                                />
+                                {isSaving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+                            </div>
+                        ) : (
+                            <>
+                                <h3 
+                                    className="font-semibold text-sm text-gray-200 cursor-text hover:text-white transition-colors"
+                                    onClick={() => setIsEditing(true)}
+                                    title="Clique para renomear"
+                                >
+                                    {column.title}
+                                </h3>
+                                <Badge variant="secondary" className="text-xs bg-white/5 hover:bg-white/10 text-gray-400 ml-1">
+                                    {column.leads.length}
+                                </Badge>
+                                <button 
+                                    onClick={() => setIsEditing(true)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-white"
+                                >
+                                    <Edit2 className="h-3 w-3" />
+                                </button>
+                            </>
+                        )}
+                    </div>
+                    {linkedLabel && (
+                        <div className="flex items-center gap-1.5 opacity-80" title="Leads com esta tag movem para esta coluna">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: linkedLabel.color }} />
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider line-clamp-1">{linkedLabel.title}</span>
+                        </div>
+                    )}
                 </div>
 
-                {!isProtected && onDelete && (
+                {!isEditing && isDeletable && onDelete && (
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-gray-500 hover:text-red-400 hover:bg-white/5"
+                        className="h-8 w-8 text-gray-500 hover:text-red-400 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => onDelete(column.id)}
+                        title="Excluir Coluna"
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>

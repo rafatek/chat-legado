@@ -178,7 +178,7 @@ async function handleIncomingMessage(token: string, body: any) {
     // Format 1: UazAPI standard event
     if (body.data?.key) {
       const key = body.data.key
-      fromMe = key.fromMe === true
+      fromMe = key.fromMe === true || String(key.fromMe) === 'true'
       senderPhone = (key.remoteJid || '').replace('@s.whatsapp.net', '').replace(/\D/g, '')
       messageId = key.id || ''
 
@@ -194,7 +194,7 @@ async function handleIncomingMessage(token: string, body: any) {
     }
     // Format 2: simpler structure
     else if (body.remoteJid) {
-      fromMe = body.fromMe === true
+      fromMe = body.fromMe === true || String(body.fromMe) === 'true'
       senderPhone = body.remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
       senderName = body.pushName || senderPhone
       messageContent = body.message?.conversation || body.text || '[Mensagem]'
@@ -202,7 +202,7 @@ async function handleIncomingMessage(token: string, body: any) {
     }
     // Format 3: n8n Custom Subflow Webhook
     else if (body.source === 'n8n' || body.phone) {
-      fromMe = body.fromMe === true
+      fromMe = body.fromMe === true || String(body.fromMe) === 'true' || body.direction === 'outbound'
       senderPhone = String(body.phone || body.contact_phone || '').replace(/\D/g, '')
       senderName = body.name || body.contact_name || senderPhone
       messageContent = body.message || body.text || body.content || '[Mensagem]'
@@ -322,7 +322,22 @@ async function handleIncomingMessage(token: string, body: any) {
         .eq('id', conversation.id)
     }
 
-    // 6. Save message with lead_id linked
+    // 6. Check for duplicate before saving (Deduplication)
+    if (messageId) {
+      const { data: existingMsg } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('whatsapp_message_id', messageId)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (existingMsg) {
+        console.log(`Deduplication: Message ${messageId} already exists in DB. Skipping.`)
+        return
+      }
+    }
+
+    // 7. Save message with lead_id linked
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
       user_id: userId,

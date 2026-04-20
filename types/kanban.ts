@@ -21,4 +21,5 @@ export type Column = {
     title: string
     position: number
     leads: Lead[]
+    linked_label_id?: string
 }

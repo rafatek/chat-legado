@@ -109,7 +109,14 @@ export async function POST(req: NextRequest) {
 
     const messageId = uazData?.key?.id || uazData?.id || uazData?.messageId || null
 
-    // 8. Salva a mensagem no banco
+    // 8. Buscar o lead_id da conversa
+    const { data: convData } = await supabaseAdmin
+      .from('conversations')
+      .select('lead_id')
+      .eq('id', conversation_id)
+      .single()
+
+    // 9. Salva a mensagem no banco
     const { data: message, error: msgError } = await supabaseAdmin
       .from('messages')
       .insert({
@@ -119,6 +126,7 @@ export async function POST(req: NextRequest) {
         from_me: true,
         whatsapp_message_id: messageId,
         status: 'sent',
+        lead_id: convData?.lead_id || null,
       })
       .select()
       .single()

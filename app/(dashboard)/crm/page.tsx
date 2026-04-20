@@ -50,6 +50,15 @@ export default async function CRMPage() {
     </div>
   }
 
+  // 1.5 Fetch Available Labels
+  const { data: labelsData } = await supabase
+    .from('labels')
+    .select('id, title, color')
+    .order('title', { ascending: true })
+
+  const availableLabels: Label[] = labelsData || []
+
+
   // 2. Fetch Leads with Labels
   const { data: leadsData, error: leadsError } = await supabase
     .from('leads')
@@ -73,6 +82,7 @@ export default async function CRMPage() {
     id: col.id,
     title: col.title,
     position: col.position,
+    linked_label_id: col.linked_label_id,
     leads: [],
   }))
 
@@ -108,8 +118,9 @@ export default async function CRMPage() {
       </div>
 
       <div className="flex-1 overflow-hidden bg-[#0A0A0C] border border-white/5 rounded-xl p-4 shadow-inner">
-        <KanbanBoard initialColumns={columns} />
+        <KanbanBoard initialColumns={columns} availableLabels={availableLabels} />
       </div>
     </div>
   )
 }
+

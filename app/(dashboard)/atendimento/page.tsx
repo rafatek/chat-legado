@@ -14,6 +14,13 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { Label as KanbanLabel } from "@/types/kanban"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // =============================================
 // Types
@@ -26,6 +33,8 @@ interface Conversation {
   last_message_at: string
   unread_count: number
   is_open: boolean
+  labels?: KanbanLabel[]
+  lead_id?: string
 }
 
 interface Message {
@@ -111,6 +120,7 @@ export default function AtendimentoPage() {
   const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
   const [search, setSearch] = useState("")
   const [isMobileView, setIsMobileView] = useState(false)
+  const [availableLabels, setAvailableLabels] = useState<KanbanLabel[]>([])
 
   // Nova Conversa Dialog
   const [isNewConvOpen, setIsNewConvOpen] = useState(false)
@@ -164,17 +174,47 @@ export default function AtendimentoPage() {
     setIsLoadingConvs(true)
     const { data, error } = await supabase
       .from("conversations")
-      .select("*")
+      .select(`
+        *,
+        leads!leads_conversation_id_fkey (
+          id,
+          lead_labels (
+            labels (
+              id,
+              title,
+              color
+            )
+          )
+        )
+      `)
       .eq("user_id", userId)
       .order("last_message_at", { ascending: false })
+      
     if (!error && data) {
-      setConversations(data)
-      setFilteredConvs(data)
+      const formatted = data.map((conv: any) => {
+        // Como o relacionamento é OneToMany pela ótica do DB, 'leads' vem como array. Pegamos o primeiro.
+        const firstLead = (Array.isArray(conv.leads) ? conv.leads[0] : conv.leads) || null
+        const flatLabels = firstLead?.lead_labels?.map((ll: any) => ll.labels).filter(Boolean) || []
+        return { 
+            ...conv, 
+            lead_id: firstLead?.id || conv.lead_id, 
+            labels: flatLabels 
+        }
+      })
+      setConversations(formatted)
+      setFilteredConvs(formatted)
     }
     setIsLoadingConvs(false)
   }, [userId])
 
+  const loadLabels = useCallback(async () => {
+    if (!userId) return
+    const { data } = await supabase.from('labels').select('*').eq('user_id', userId)
+    if (data) setAvailableLabels(data)
+  }, [userId])
+
   useEffect(() => { loadConversations() }, [loadConversations])
+  useEffect(() => { loadLabels() }, [loadLabels])
 
   // ---- Search Filter ----
   useEffect(() => {
@@ -192,17 +232,40 @@ export default function AtendimentoPage() {
     if (!userId) return
     const channel = supabase
       .channel("convs-realtime")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "conversations", filter: `user_id=eq.${userId}` },
-        (payload: { eventType: string; new: Conversation }) => {
-          if (payload.eventType === "INSERT") {
-            setConversations(prev => [payload.new as Conversation, ...prev])
-          } else if (payload.eventType === "UPDATE") {
-            setConversations(prev =>
-              prev.map(c => c.id === payload.new.id ? payload.new as Conversation : c)
-                .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
-            )
-            setSelectedConv(prev => prev?.id === payload.new.id ? payload.new as Conversation : prev)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newConv = payload.new as Conversation
+            setConversations(prev => {
+              if (prev.find(c => c.id === newConv.id)) return prev
+              return [newConv, ...prev]
+            })
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedConv = payload.new as Conversation
+            setConversations(prev => prev.map(c => {
+                if (c.id === updatedConv.id) {
+                    return { 
+                        ...c, 
+                        ...updatedConv,
+                        lead_id: c.lead_id || updatedConv.lead_id,
+                        labels: c.labels
+                    }
+                }
+                return c
+            }))
+            setSelectedConv(prev => {
+                if (prev?.id === updatedConv.id) {
+                    return { 
+                        ...prev, 
+                        ...updatedConv,
+                        lead_id: prev.lead_id || updatedConv.lead_id,
+                        labels: prev.labels
+                    }
+                }
+                return prev
+            })
           }
         })
       .subscribe()
@@ -400,6 +463,82 @@ export default function AtendimentoPage() {
     }
   }
 
+  const handleRemoveLabel = async (leadId: string | undefined | null, labelId: string) => {
+    if (!leadId) {
+        toast.warning("Sem registro de CRM para remover a etiqueta.")
+        return
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('lead_labels')
+            .delete()
+            .eq('lead_id', leadId)
+            .eq('label_id', labelId)
+
+        if (error) throw error
+
+        // Atualiza UI instantaneamente retirando a tag
+        setConversations(prev => prev.map(c => {
+            if (c.lead_id === leadId) {
+                return { ...c, labels: c.labels?.filter(l => l.id !== labelId) }
+            }
+            return c
+        }))
+        
+        setSelectedConv(prev => {
+            if (prev && prev.lead_id === leadId) {
+                return { ...prev, labels: prev.labels?.filter(l => l.id !== labelId) }
+            }
+            return prev
+        })
+        
+    } catch (err) {
+        toast.error("Erro ao remover etiqueta")
+    }
+  }
+
+  const handleAddLabel = async (leadId: string | undefined | null, labelId: string) => {
+    if (!leadId) {
+        toast.warning("Sem registro correspondente do CRM (Lead ID Null).")
+        return
+    }
+    try {
+        const { error } = await supabase.from('lead_labels').insert({ lead_id: leadId, label_id: labelId })
+        if (error) {
+            toast.error(`Erro: ${error.message}`)
+            throw error
+        }
+        
+        const labelToAdd = availableLabels.find(l => l.id === labelId)
+        if (!labelToAdd) return
+
+        // Tentar atualizar o React
+        setConversations(prev => prev.map(c => {
+            if (c.lead_id === leadId) {
+                const currentLabels = c.labels || []
+                if (!currentLabels.find(l => l.id === labelToAdd.id)) {
+                    return { ...c, labels: [...currentLabels, labelToAdd] }
+                }
+            }
+            return c
+        }))
+        
+        setSelectedConv(prev => {
+            if (prev && prev.lead_id === leadId) {
+                const currentLabels = prev.labels || []
+                if (!currentLabels.find(l => l.id === labelToAdd.id)) {
+                    return { ...prev, labels: [...currentLabels, labelToAdd] }
+                }
+            }
+            return prev
+        })
+        
+    } catch (err: any) {
+        console.error("Adicionar Etiqueta Error:", err)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
@@ -499,6 +638,22 @@ export default function AtendimentoPage() {
                       </span>
                       <span className="text-[10px] text-gray-600 flex-shrink-0">{formatTime(conv.last_message_at)}</span>
                     </div>
+                    
+                    {/* Renderização das Badges/Etiquetas */}
+                    {conv.labels && conv.labels.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {conv.labels.map(label => (
+                          <div 
+                            key={label.id} 
+                            style={{ backgroundColor: label.color }} 
+                            className="text-[9px] uppercase font-bold text-white px-1.5 py-0.5 rounded-sm line-clamp-1 truncate max-w-[80px]"
+                            title={label.title}
+                          >
+                            {label.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs text-gray-500 truncate">{conv.last_message || "..."}</p>
                       {conv.unread_count > 0 && (
@@ -532,8 +687,59 @@ export default function AtendimentoPage() {
                 </button>
                 <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">{selectedConv.contact_name || selectedConv.contact_phone}</p>
-                  <p className="text-[11px] text-gray-500 font-mono">{selectedConv.contact_phone}</p>
+                  <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-white">{selectedConv.contact_name || selectedConv.contact_phone}</p>
+                      <p className="text-[11px] text-gray-500 font-mono hidden sm:block">{selectedConv.contact_phone}</p>
+                  </div>
+                  
+                  {/* Etiquetas no Cabeçalho do Chat */}
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {selectedConv.labels && selectedConv.labels.map(label => (
+                          <div 
+                            key={label.id} 
+                            style={{ backgroundColor: label.color }} 
+                            className="flex items-center gap-1 text-[9px] uppercase font-bold text-white pl-1.5 pr-0.5 py-0.5 rounded-sm"
+                          >
+                            <span>{label.title}</span>
+                            <button 
+                                onClick={() => handleRemoveLabel(selectedConv.lead_id, label.id)} 
+                                className="hover:bg-black/20 rounded-sm p-[1px] transition-colors"
+                                title="Remover etiqueta"
+                            >
+                                <X className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
+                      ))}
+                      
+                      <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                              <button className="flex items-center justify-center h-4 w-4 rounded-sm border border-dashed border-gray-600 hover:border-gray-400 hover:bg-white/5 transition-colors text-gray-400 hover:text-white" title="Adicionar etiqueta ao lead">
+                                  <Plus className="h-3 w-3" />
+                              </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-48 bg-[#1A1A23] border-white/10">
+                              {availableLabels.length === 0 ? (
+                                  <div className="px-2 py-2 text-xs text-gray-500 text-center">Nenhuma etiqueta criada no CRM</div>
+                              ) : (
+                                  availableLabels.map(lbl => {
+                                      const hasLabel = selectedConv.labels?.some(l => l.id === lbl.id)
+                                      return (
+                                        <DropdownMenuItem 
+                                            key={lbl.id}
+                                            disabled={hasLabel}
+                                            onClick={() => handleAddLabel(selectedConv.lead_id, lbl.id)}
+                                            className="text-xs text-gray-200 cursor-pointer flex items-center gap-2 hover:bg-white/5 data-[highlighted]:bg-white/10 outline-none"
+                                        >
+                                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: lbl.color }} />
+                                            <span className="truncate">{lbl.title}</span>
+                                            {hasLabel && <Check className="h-3 w-3 ml-auto opacity-50 flex-shrink-0" />}
+                                        </DropdownMenuItem>
+                                      )
+                                  })
+                              )}
+                          </DropdownMenuContent>
+                      </DropdownMenu>
+                  </div>
                 </div>
                 <a
                   href={`https://wa.me/${selectedConv.contact_phone}`}
