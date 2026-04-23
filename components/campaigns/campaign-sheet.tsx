@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
     Sheet,
@@ -22,6 +23,7 @@ import { LeadSelector } from "@/components/campaigns/lead-selector"
 
 const campaignSchema = z.object({
     name: z.string().min(3, "Nome muito curto"),
+    text_campanha: z.string().optional(),
     folder_name: z.string().optional(),
     schedule_days: z.array(z.string()).min(1, "Selecione pelo menos um dia"),
     schedule_start_time: z.string().min(1, "Início obrigatório"),
@@ -59,6 +61,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
         resolver: zodResolver(campaignSchema),
         defaultValues: {
             name: "",
+            text_campanha: "",
             folder_name: "",
             schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
             schedule_start_time: "09:00",
@@ -75,6 +78,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                 // Formatting for Edit
                 form.reset({
                     name: campaignToEdit.name,
+                    text_campanha: campaignToEdit.text_campanha || "",
                     folder_name: campaignToEdit.folder_name || "",
                     schedule_days: mapDaysToUI(campaignToEdit.schedule_days),
                     schedule_start_time: campaignToEdit.start_time,
@@ -107,6 +111,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                 // Create Mode
                 form.reset({
                     name: "",
+                    text_campanha: "",
                     folder_name: "",
                     schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
                     schedule_start_time: "09:00",
@@ -197,6 +202,11 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                                 <Label>Nome da Campanha</Label>
                                 <Input {...form.register("name")} placeholder="Ex: Prospecção Imobiliária" />
                                 {form.formState.errors.name && <span className="text-red-500 text-xs">{form.formState.errors.name.message}</span>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Mensagem do Disparo</Label>
+                                <Textarea {...form.register("text_campanha")} placeholder="Olá, tudo bem? Vi que você..." className="h-32 resize-none bg-black/20 border-white/10" />
                             </div>
 
                             <div className="space-y-2">

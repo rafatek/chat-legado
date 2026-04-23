@@ -19,7 +19,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { Folder, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { Folder, ChevronLeft, ChevronRight, Loader2, Tag } from "lucide-react"
 import { getLeadsForSelector } from "@/lib/actions/campaigns"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
@@ -40,6 +40,12 @@ interface FolderStat {
     count: number
 }
 
+interface LabelStat {
+    id: string
+    title: string
+    color: string
+}
+
 export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, initialSelectedIds, lockedIds }: LeadSelectorProps) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [currentFolder, setCurrentFolder] = useState(initialFolder || "Todas")
@@ -49,6 +55,8 @@ export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, ini
     const [page, setPage] = useState(1)
     const [loading, setLoading] = useState(false)
     const [folders, setFolders] = useState<FolderStat[]>([])
+    const [labels, setLabels] = useState<LabelStat[]>([])
+    const [currentLabelId, setCurrentLabelId] = useState<string | null>(null)
 
     const pageSize = 10
 
@@ -84,22 +92,30 @@ export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, ini
                 }
 
                 setFolders(stats)
+
+                const { data: labelsList } = await supabase
+                    .from('labels')
+                    .select('id, title, color')
+                    .eq('user_id', user.id)
+
+                if (labelsList) {
+                    setLabels(labelsList)
+                }
             }
             fetchFolders()
         }
     }, [open])
 
-    // Fetch Leads when page/folder changes
     useEffect(() => {
         if (open) {
             fetchLeads()
         }
-    }, [open, page, currentFolder])
+    }, [open, page, currentFolder, currentLabelId])
 
     const fetchLeads = async () => {
         setLoading(true)
         try {
-            const { leads, total } = await getLeadsForSelector(page, pageSize, currentFolder)
+            const { leads, total } = await getLeadsForSelector(page, pageSize, currentFolder, currentLabelId || undefined)
             setLeads(leads)
             setTotalLeads(total)
         } catch (error) {
@@ -175,6 +191,39 @@ export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, ini
                                 </button>
                             ))}
                         </div>
+
+                         {/* Etiquetas */}
+                         {labels.length > 0 && (
+                             <div className="mt-4 pt-4 border-t border-white/5">
+                                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5"><Tag className="w-3.5 h-3.5"/> Filtrar por Etiqueta</h4>
+                                 <div className="flex flex-wrap gap-2">
+                                    <button
+                                         onClick={() => { setCurrentLabelId(null); setPage(1); }}
+                                         className={cn(
+                                             "px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
+                                             currentLabelId === null
+                                                 ? "bg-white/10 text-white border-white/20"
+                                                 : "bg-transparent text-gray-500 border-white/5 hover:bg-white/5"
+                                         )}
+                                     >
+                                         Limpar Filtro
+                                     </button>
+                                     {labels.map(label => (
+                                         <button
+                                             key={label.id}
+                                             onClick={() => { setCurrentLabelId(label.id); setPage(1); }}
+                                             style={{ backgroundColor: currentLabelId === label.id ? label.color : undefined, borderColor: label.color, color: currentLabelId === label.id ? '#FFF' : label.color }}
+                                             className={cn(
+                                                 "px-3 py-1.5 rounded-md text-xs font-bold border transition-colors",
+                                                 currentLabelId !== label.id && "bg-transparent hover:bg-white/5"
+                                             )}
+                                         >
+                                             {label.title}
+                                         </button>
+                                     ))}
+                                 </div>
+                             </div>
+                         )}
                     </div>
 
                     {/* Table (Expanded) */}

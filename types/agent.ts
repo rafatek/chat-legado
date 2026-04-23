@@ -8,6 +8,7 @@ export interface AgentConfig {
     response_interval: number // in minutes
     target_audience: 'all' | 'clients_only'
     pauser_permanente?: boolean
+    destino_encaminhamento?: string
     meta_data?: Record<string, any>
     created_at?: string
     updated_at?: string

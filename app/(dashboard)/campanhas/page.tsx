@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils"
 interface CampaignWithStats {
     id: string
     name: string
+    text_campanha?: string
     schedule_days: number[]
     start_time: string
     end_time: string

@@ -11,6 +11,7 @@ interface CreateCampaignData {
     schedule_end_time: string
     min_interval_seconds: number
     max_interval_seconds: number
+    text_campanha?: string
     selected_lead_ids?: string[]
 }
 
@@ -79,6 +80,7 @@ export async function createCampaign(data: CreateCampaignData) {
             end_time: data.schedule_end_time,
             min_interval_min: min_int_min,
             max_interval_min: max_int_min,
+            text_campanha: data.text_campanha,
             server_id: server_id,
             status: 'paused'
         }
@@ -172,14 +174,17 @@ export async function createCampaign(data: CreateCampaignData) {
     }
 }
 
-export async function getLeadsForSelector(page: number = 1, pageSize: number = 20, folder: string = "Todas") {
+export async function getLeadsForSelector(page: number = 1, pageSize: number = 20, folder: string = "Todas", labelId?: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { leads: [], total: 0 }
 
+    // Usar outer join caso labelId não exista, inner join caso precise ser exato
+    let selectQuery = labelId ? '*, lead_labels!inner(label_id)' : '*'
+    
     let query = supabase
         .from('leads')
-        .select('*', { count: 'exact' })
+        .select(`${selectQuery}`, { count: 'exact' })
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range((page - 1) * pageSize, page * pageSize - 1)
@@ -190,6 +195,10 @@ export async function getLeadsForSelector(page: number = 1, pageSize: number = 2
         } else {
             query = query.eq('folder', folder)
         }
+    }
+
+    if (labelId) {
+        query = query.eq('lead_labels.label_id', labelId)
     }
 
     const { data: leads, count, error } = await query
@@ -289,6 +298,7 @@ export async function updateCampaign(data: UpdateCampaignData) {
                 end_time: data.schedule_end_time,
                 min_interval_min: min_int,
                 max_interval_min: max_int,
+                text_campanha: data.text_campanha,
             })
             .eq('id', data.id)
             .eq('user_id', user.id)

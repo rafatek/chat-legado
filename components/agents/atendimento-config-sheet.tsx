@@ -45,7 +45,8 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
         personality: '',
         response_interval: 5,
         target_audience: 'all',
-        pauser_permanente: false
+        pauser_permanente: false,
+        destino_encaminhamento: ''
     })
 
     // Load data when sheet opens
@@ -84,7 +85,8 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                     personality: '',
                     response_interval: 5,
                     target_audience: 'all',
-                    pauser_permanente: false
+                    pauser_permanente: false,
+                    destino_encaminhamento: ''
                 })
             }
         } catch (err) {
@@ -112,6 +114,7 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                 response_interval: config.response_interval,
                 target_audience: config.target_audience,
                 pauser_permanente: config.pauser_permanente,
+                destino_encaminhamento: config.destino_encaminhamento,
                 updated_at: new Date().toISOString()
             }
 
@@ -242,6 +245,19 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                                                     <SelectItem value="clients_only">Apenas leads da base de clientes</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <Label className="text-base">Fusão de encaminhamento com IA</Label>
+                                            <Input
+                                                placeholder="Ex: 5591985353657 ou 120363012345678901@g.us"
+                                                value={config.destino_encaminhamento || ''}
+                                                onChange={(e) => setConfig({ ...config, destino_encaminhamento: e.target.value })}
+                                                className="h-12 bg-black/40 border-white/10"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Adicione o destino que a IA vai encaminha o Lead - Cel : 5591985353657  ou ID de grupo : 120363012345678901@g.us
+                                            </p>
                                         </div>
                                     </div>
 
