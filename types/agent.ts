@@ -9,6 +9,9 @@ export interface AgentConfig {
     target_audience: 'all' | 'clients_only'
     pauser_permanente?: boolean
     destino_encaminhamento?: string
+    notification_phones?: string
+    notify_new_messages?: boolean
+    notify_new_leads?: boolean
     meta_data?: Record<string, any>
     created_at?: string
     updated_at?: string

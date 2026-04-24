@@ -1,6 +1,6 @@
-
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { formatBrazilianPhone } from '@/lib/utils/phone'
 
 // Initializing Supabase Client with Service Role Key to bypass RLS for token lookup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -40,7 +40,10 @@ export async function POST(
     }
 
     const body = await req.json()
-    console.log("Webhook Body:", JSON.stringify(body).slice(0, 300))
+    console.log("\n================ WEBHOOK PAYLOAD INICIO ================")
+    console.log("Token:", token)
+    console.log(JSON.stringify(body, null, 2))
+    console.log("================ WEBHOOK PAYLOAD FIM ================\n")
 
     // =============================================
     // CASE A: Incoming WhatsApp MESSAGE via UazAPI or n8n
@@ -100,7 +103,7 @@ export async function POST(
       }
 
       if (normalizedLead.whatsapp) {
-        normalizedLead.whatsapp = String(normalizedLead.whatsapp).replace(/\D/g, "")
+        normalizedLead.whatsapp = formatBrazilianPhone(normalizedLead.whatsapp)
       }
 
       if (normalizedLead) {
@@ -179,7 +182,7 @@ async function handleIncomingMessage(token: string, body: any) {
     if (body.data?.key) {
       const key = body.data.key
       fromMe = key.fromMe === true || String(key.fromMe) === 'true'
-      senderPhone = (key.remoteJid || '').replace('@s.whatsapp.net', '').replace(/\D/g, '')
+      senderPhone = formatBrazilianPhone((key.remoteJid || '').replace('@s.whatsapp.net', ''))
       messageId = key.id || ''
 
       const msg = body.data.message
@@ -195,7 +198,7 @@ async function handleIncomingMessage(token: string, body: any) {
     // Format 2: simpler structure
     else if (body.remoteJid) {
       fromMe = body.fromMe === true || String(body.fromMe) === 'true'
-      senderPhone = body.remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+      senderPhone = formatBrazilianPhone(body.remoteJid.replace('@s.whatsapp.net', ''))
       senderName = body.pushName || senderPhone
       messageContent = body.message?.conversation || body.text || '[Mensagem]'
       messageId = body.id || ''
@@ -203,7 +206,7 @@ async function handleIncomingMessage(token: string, body: any) {
     // Format 3: n8n Custom Subflow Webhook
     else if (body.source === 'n8n' || body.phone) {
       fromMe = body.fromMe === true || String(body.fromMe) === 'true' || body.direction === 'outbound'
-      senderPhone = String(body.phone || body.contact_phone || '').replace(/\D/g, '')
+      senderPhone = formatBrazilianPhone(body.phone || body.contact_phone || '')
       senderName = body.name || body.contact_name || senderPhone
       messageContent = body.message || body.text || body.content || '[Mensagem]'
       messageId = body.messageId || body.id || `n8n_${Date.now()}`

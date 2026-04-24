@@ -26,10 +26,10 @@ export async function POST(req: NextRequest) {
 
     // 3. Lê o body
     const body = await req.json()
-    const { conversation_id, contact_phone, content } = body
+    const { conversation_id, contact_phone, content, media_url, media_type } = body
 
-    if (!conversation_id || !contact_phone || !content) {
-      return NextResponse.json({ error: 'Campos obrigatórios ausentes (conversation_id, contact_phone, content)' }, { status: 400 })
+    if (!conversation_id || !contact_phone || (!content && !media_url)) {
+      return NextResponse.json({ error: 'Campos obrigatórios ausentes (conversation_id, contact_phone, content ou media_url)' }, { status: 400 })
     }
 
     // 4. Busca a conexão WhatsApp do usuário
@@ -58,12 +58,22 @@ export async function POST(req: NextRequest) {
     console.log(`[send] → ${phone} | instância: ${connection.instance_name} | base: ${baseUrl}`)
 
     // 7. Tenta múltiplos endpoints do UazAPI (compatibilidade com versões diferentes)
-    const endpoints = [
-      { path: '/message/sendText', body: { number: phone, text: content } },
-      { path: '/message/text',     body: { number: phone, text: content } },
-      { path: '/send/text',        body: { number: phone, text: content } },
-      { path: '/message/sendText', body: { number: phone, textMessage: { text: content } } },
-    ]
+    let endpoints: any[] = []
+    
+    if (media_url) {
+        endpoints = [
+            { path: '/send/media', body: { number: phone, type: media_type || 'document', file: media_url, docName: 'anexo', text: content === '[Mídia]' ? '' : content || '' } },
+            { path: '/message/sendMedia', body: { number: phone, mediatype: media_type || 'document', mimetype: 'application/octet-stream', caption: content === '[Mídia]' ? '' : content || '', media: media_url } },
+            { path: '/message/sendMediaUrl', body: { number: phone, url: media_url, caption: content === '[Mídia]' ? '' : content || '' } },
+        ]
+    } else {
+        endpoints = [
+            { path: '/message/sendText', body: { number: phone, text: content } },
+            { path: '/message/text',     body: { number: phone, text: content } },
+            { path: '/send/text',        body: { number: phone, text: content } },
+            { path: '/message/sendText', body: { number: phone, textMessage: { text: content } } },
+        ]
+    }
 
     let uazData: any = null
     let sendSuccess = false
@@ -122,11 +132,13 @@ export async function POST(req: NextRequest) {
       .insert({
         conversation_id,
         user_id: user.id,
-        content,
+        content: content || '[Mídia]',
         from_me: true,
         whatsapp_message_id: messageId,
         status: 'sent',
         lead_id: convData?.lead_id || null,
+        media_url: media_url || null,
+        media_type: media_type || null
       })
       .select()
       .single()
@@ -136,10 +148,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Mensagem enviada mas falha ao salvar no banco' }, { status: 500 })
     }
 
-    // 9. Atualiza last_message na conversa
+    // 10. Atualiza last_message na conversa
     await supabaseAdmin
       .from('conversations')
-      .update({ last_message: content, last_message_at: new Date().toISOString() })
+      .update({ last_message: content || '[Mídia]', last_message_at: new Date().toISOString() })
       .eq('id', conversation_id)
 
     console.log(`[send] ✅ Mensagem salva. DB id: ${message.id}`)

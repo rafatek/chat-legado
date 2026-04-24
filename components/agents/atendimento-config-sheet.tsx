@@ -46,7 +46,10 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
         response_interval: 5,
         target_audience: 'all',
         pauser_permanente: false,
-        destino_encaminhamento: ''
+        destino_encaminhamento: '',
+        notification_phones: '',
+        notify_new_messages: false,
+        notify_new_leads: false
     })
 
     // Load data when sheet opens
@@ -86,7 +89,10 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                     response_interval: 5,
                     target_audience: 'all',
                     pauser_permanente: false,
-                    destino_encaminhamento: ''
+                    destino_encaminhamento: '',
+                    notification_phones: '',
+                    notify_new_messages: false,
+                    notify_new_leads: false
                 })
             }
         } catch (err) {
@@ -115,6 +121,9 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                 target_audience: config.target_audience,
                 pauser_permanente: config.pauser_permanente,
                 destino_encaminhamento: config.destino_encaminhamento,
+                notification_phones: config.notification_phones,
+                notify_new_messages: config.notify_new_messages,
+                notify_new_leads: config.notify_new_leads,
                 updated_at: new Date().toISOString()
             }
 
@@ -258,6 +267,50 @@ export function AtendimentoConfigSheet({ open, onOpenChange }: AtendimentoConfig
                                             <p className="text-xs text-muted-foreground">
                                                 Adicione o destino que a IA vai encaminha o Lead - Cel : 5591985353657  ou ID de grupo : 120363012345678901@g.us
                                             </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Notificações */}
+                                    <div className="rounded-xl border border-white/5 bg-black/20 p-6 space-y-6">
+                                        <h3 className="text-lg font-semibold text-white/80 border-b border-white/5 pb-2">Notificações Externas</h3>
+                                        
+                                        <div className="space-y-3">
+                                            <Label className="text-base">Telefones para Notificação</Label>
+                                            <Input
+                                                placeholder="Ex: 5591985353657, 551199999999"
+                                                value={config.notification_phones || ''}
+                                                onChange={(e) => setConfig({ ...config, notification_phones: e.target.value })}
+                                                className="h-12 bg-black/40 border-white/10"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Separe os números por vírgula. Lembre-se de adicionar o DDI (Ex: 55).
+                                            </p>
+                                        </div>
+
+                                        <div className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5">
+                                            <div className="space-y-0.5">
+                                                <Label className="text-sm font-medium">Notificar Novas Mensagens</Label>
+                                                <p className="text-xs text-muted-foreground leading-tight">
+                                                    Disparar alerta a cada nova mensagem recebida.
+                                                </p>
+                                            </div>
+                                            <Switch
+                                                checked={config.notify_new_messages}
+                                                onCheckedChange={(checked) => setConfig({ ...config, notify_new_messages: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5">
+                                            <div className="space-y-0.5">
+                                                <Label className="text-sm font-medium">Notificar Novos Leads</Label>
+                                                <p className="text-xs text-muted-foreground leading-tight">
+                                                    Disparar alerta apenas para contatos novos/desconhecidos.
+                                                </p>
+                                            </div>
+                                            <Switch
+                                                checked={config.notify_new_leads}
+                                                onCheckedChange={(checked) => setConfig({ ...config, notify_new_leads: checked })}
+                                            />
                                         </div>
                                     </div>
 

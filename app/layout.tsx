@@ -27,6 +27,7 @@ export const metadata: Metadata = {
 }
 
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "sonner"
 
 export default function RootLayout({
   children,
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className={`font-sans antialiased`}>
         {children}
         <Toaster />
+        <SonnerToaster position="bottom-right" theme="dark" />
         <Analytics />
       </body>
     </html>
