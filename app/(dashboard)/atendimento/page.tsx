@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import {
-  Send, MessageSquare, Search, Loader2, CheckCheck, Check,
+  Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -35,6 +35,7 @@ interface Conversation {
   is_open: boolean
   labels?: KanbanLabel[]
   lead_id?: string
+  profile_pic_url?: string
 }
 
 interface Message {
@@ -75,8 +76,11 @@ function getAvatarColor(phone: string) {
   return AVATAR_COLORS[sum % AVATAR_COLORS.length]
 }
 
-function ContactAvatar({ name, phone, size = "md" }: { name: string; phone: string; size?: "sm" | "md" | "lg" }) {
+function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; phone: string; size?: "sm" | "md" | "lg", picUrl?: string }) {
   const sizeClass = { sm: "h-8 w-8 text-xs", md: "h-10 w-10 text-sm", lg: "h-12 w-12 text-base" }[size]
+  if (picUrl) {
+    return <img src={picUrl} alt={name} className={cn("rounded-full object-cover flex-shrink-0", sizeClass)} />
+  }
   return (
     <div className={cn("rounded-full flex items-center justify-center font-bold text-white flex-shrink-0", sizeClass, getAvatarColor(phone))}>
       {getInitials(name || phone)}
@@ -98,9 +102,19 @@ function MessageBubble({ message }: { message: Message }) {
             <img src={message.media_url} alt="Mídia" className="w-full h-auto object-cover" />
           </div>
         )}
-        {message.media_url && message.media_type !== 'image' && (
+        {message.media_url && (message.media_type === 'audio' || message.media_type === 'ptt') && (
+          <div className="mb-2 -mx-2 -mt-1 min-w-[200px] max-w-[260px]">
+            <audio controls src={message.media_url} className="w-full" style={{ height: '45px' }} />
+          </div>
+        )}
+        {message.media_url && message.media_type === 'video' && (
+          <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
+            <video controls src={message.media_url} className="w-full h-auto object-cover" />
+          </div>
+        )}
+        {message.media_url && !['image', 'audio', 'ptt', 'video'].includes(message.media_type || '') && (
           <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg text-xs hover:bg-black/30 transition-colors">
-            Baixar Anexo
+            <Paperclip className="h-4 w-4" /> Baixar Anexo
           </a>
         )}
         <p className="leading-relaxed break-words">{message.content}</p>
@@ -108,9 +122,11 @@ function MessageBubble({ message }: { message: Message }) {
           <span className={cn("text-[10px]", isMe ? "text-blue-100/70" : "text-gray-500")}>
             {formatTime(message.created_at)}
           </span>
-          {isMe && (message.status === "read"
-            ? <CheckCheck className="h-3 w-3 text-blue-200" />
-            : <Check className="h-3 w-3 text-blue-200/60" />
+          {isMe && (
+            message.status === "read" ? <CheckCheck className="h-4 w-4 text-[#53bdeb]" /> :
+            message.status === "delivered" ? <CheckCheck className="h-4 w-4 text-gray-400" /> :
+            message.status === "sending" ? <Clock className="h-3 w-3 text-gray-400" /> :
+            <Check className="h-4 w-4 text-gray-400" />
           )}
         </div>
       </div>
@@ -315,7 +331,7 @@ export default function AtendimentoPage() {
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${selectedConv.id}` },
         (payload: { new: Message }) => {
           if (!payload.new.content?.trim() && !payload.new.media_url) return
-          setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new as Message])
+          setMessages(prev => prev.find(m => m.id === payload.new.id || (m.whatsapp_message_id && m.whatsapp_message_id === payload.new.whatsapp_message_id)) ? prev : [...prev, payload.new as Message])
         })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -360,7 +376,13 @@ export default function AtendimentoPage() {
         setNewMessage(content)
         return
       }
-      setMessages(prev => prev.map(m => m.id === tempMsg.id ? data.message : m))
+      setMessages(prev => {
+        const withoutTemp = prev.filter(m => m.id !== tempMsg.id)
+        if (!withoutTemp.find(m => m.id === data.message.id || (m.whatsapp_message_id && m.whatsapp_message_id === data.message.whatsapp_message_id))) {
+          return [...withoutTemp, data.message]
+        }
+        return withoutTemp
+      })
     } catch {
       toast.error("Erro de conexão ao enviar mensagem")
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
@@ -417,7 +439,7 @@ export default function AtendimentoPage() {
 
   // ---- Nova Conversa ----
   const handleCreateConversation = async () => {
-    const phone = newConvPhone.replace(/\D/g, "")
+    let phone = newConvPhone.replace(/\D/g, "")
     const firstMsg = newConvMsg.trim()
 
     if (!phone || phone.length < 10) {
@@ -427,6 +449,14 @@ export default function AtendimentoPage() {
     if (!firstMsg) {
       toast.warning("Digite uma mensagem para enviar")
       return
+    }
+
+    // Remove o prefixo 55 (DDI Brasil) para salvar no padrão do sistema
+    // O webhook e n8n salvam sem o 55, então mantemos consistência
+    if (phone.length === 13 && phone.startsWith('55')) {
+      phone = phone.slice(2)
+    } else if (phone.length === 12 && phone.startsWith('55')) {
+      phone = phone.slice(2)
     }
 
     setIsCreatingConv(true)
@@ -462,7 +492,7 @@ export default function AtendimentoPage() {
 
         if (!existingLead) {
           // Busca a primeira coluna (position 0) para colocar o lead
-          const { data: firstCol } = await supabase
+          const { data: firstCol, error: colErr } = await supabase
             .from("kanban_columns")
             .select("id")
             .eq("user_id", userId)
@@ -470,7 +500,10 @@ export default function AtendimentoPage() {
             .limit(1)
             .maybeSingle()
 
-          await supabase.from("leads").insert({
+          if (colErr) console.warn("CRM: erro ao buscar primeira coluna:", colErr)
+          if (!firstCol) console.warn("CRM: nenhuma coluna encontrada para user_id:", userId)
+
+          const { error: leadInsertErr } = await supabase.from("leads").insert({
             user_id: userId,
             full_name: newConvName.trim() || phone,
             whatsapp: phone,
@@ -480,6 +513,9 @@ export default function AtendimentoPage() {
             last_message_at: new Date().toISOString(),
             conversation_id: conv.id,
           })
+
+          if (leadInsertErr) console.warn("CRM: erro ao inserir lead:", leadInsertErr)
+          else console.log(`CRM: Lead criado para ${phone} na coluna ${firstCol?.id ?? 'sem coluna'}`)
         } else {
           // Lead já existe — apenas atualiza last_message e vincula conversa
           await supabase.from("leads").update({
@@ -694,7 +730,7 @@ export default function AtendimentoPage() {
                   )}
                 >
                   <div className="relative">
-                    <ContactAvatar name={conv.contact_name || conv.contact_phone} phone={conv.contact_phone} />
+                    <ContactAvatar name={conv.contact_name || conv.contact_phone} phone={conv.contact_phone} picUrl={conv.profile_pic_url} />
                     <Circle className="absolute -bottom-0.5 -right-0.5 h-3 w-3 fill-emerald-500 text-emerald-500" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -751,7 +787,7 @@ export default function AtendimentoPage() {
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </button>
-                <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" />
+                <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" picUrl={selectedConv.profile_pic_url} />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-white">{selectedConv.contact_name || selectedConv.contact_phone}</p>
