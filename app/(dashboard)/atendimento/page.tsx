@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check,
-  ArrowLeft, Phone, Circle, Plus, X, UserPlus
+  ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,6 +45,8 @@ interface Message {
   status: string
   created_at: string
   whatsapp_message_id?: string
+  media_url?: string
+  media_type?: string
 }
 
 // =============================================
@@ -90,6 +92,17 @@ function MessageBubble({ message }: { message: Message }) {
         "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
         isMe ? "bg-[#00A3FF] text-white rounded-tr-sm" : "bg-[#1A1A23] text-gray-100 border border-white/5 rounded-tl-sm"
       )}>
+        {message.media_url && message.media_type === 'image' && (
+          <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={message.media_url} alt="Mídia" className="w-full h-auto object-cover" />
+          </div>
+        )}
+        {message.media_url && message.media_type !== 'image' && (
+          <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg text-xs hover:bg-black/30 transition-colors">
+            Baixar Anexo
+          </a>
+        )}
         <p className="leading-relaxed break-words">{message.content}</p>
         <div className={cn("flex items-center gap-1 mt-1", isMe ? "justify-end" : "justify-start")}>
           <span className={cn("text-[10px]", isMe ? "text-blue-100/70" : "text-gray-500")}>
@@ -118,6 +131,7 @@ export default function AtendimentoPage() {
   const [isSending, setIsSending] = useState(false)
   const [isLoadingConvs, setIsLoadingConvs] = useState(true)
   const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [search, setSearch] = useState("")
   const [isMobileView, setIsMobileView] = useState(false)
   const [availableLabels, setAvailableLabels] = useState<KanbanLabel[]>([])
@@ -131,6 +145,7 @@ export default function AtendimentoPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const processedUrlRef = useRef(false)
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -244,17 +259,20 @@ export default function AtendimentoPage() {
             })
           } else if (payload.eventType === 'UPDATE') {
             const updatedConv = payload.new as Conversation
-            setConversations(prev => prev.map(c => {
-                if (c.id === updatedConv.id) {
-                    return { 
-                        ...c, 
-                        ...updatedConv,
-                        lead_id: c.lead_id || updatedConv.lead_id,
-                        labels: c.labels
+            setConversations(prev => {
+                const updatedList = prev.map(c => {
+                    if (c.id === updatedConv.id) {
+                        return { 
+                            ...c, 
+                            ...updatedConv,
+                            lead_id: c.lead_id || updatedConv.lead_id,
+                            labels: c.labels
+                        }
                     }
-                }
-                return c
-            }))
+                    return c
+                })
+                return updatedList.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
+            })
             setSelectedConv(prev => {
                 if (prev?.id === updatedConv.id) {
                     return { 
@@ -277,7 +295,10 @@ export default function AtendimentoPage() {
     setIsLoadingMsgs(true)
     const { data, error } = await supabase
       .from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true })
-    if (!error && data) setMessages(data)
+    if (!error && data) {
+      const validMessages = data.filter((m: any) => m.content?.trim() || m.media_url)
+      setMessages(validMessages)
+    }
     setIsLoadingMsgs(false)
     if (userId) {
       await supabase.from("conversations").update({ unread_count: 0 }).eq("id", convId).eq("user_id", userId)
@@ -293,6 +314,7 @@ export default function AtendimentoPage() {
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${selectedConv.id}` },
         (payload: { new: Message }) => {
+          if (!payload.new.content?.trim() && !payload.new.media_url) return
           setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new as Message])
         })
       .subscribe()
@@ -303,9 +325,9 @@ export default function AtendimentoPage() {
   useEffect(() => { if (selectedConv) setTimeout(() => inputRef.current?.focus(), 100) }, [selectedConv])
 
   // ---- Send Message ----
-  const handleSend = async () => {
-    if (!newMessage.trim() || !selectedConv || isSending) return
-    const content = newMessage.trim()
+  const handleSend = async (mediaUrl?: string, mediaType?: string) => {
+    if ((!newMessage.trim() && !mediaUrl) || !selectedConv || isSending) return
+    const content = newMessage.trim() || "[Mídia]"
     setNewMessage("")
     setIsSending(true)
 
@@ -329,7 +351,7 @@ export default function AtendimentoPage() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session?.access_token || ''}`,
         },
-        body: JSON.stringify({ conversation_id: selectedConv.id, contact_phone: selectedConv.contact_phone, content }),
+        body: JSON.stringify({ conversation_id: selectedConv.id, contact_phone: selectedConv.contact_phone, content, media_url: mediaUrl, media_type: mediaType }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -345,6 +367,50 @@ export default function AtendimentoPage() {
       setNewMessage(content)
     } finally {
       setIsSending(false)
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !selectedConv) return
+    
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("O arquivo deve ter no máximo 5MB")
+      return
+    }
+
+    setIsUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${selectedConv.id}/${Math.random().toString(36).substring(2)}.${fileExt}`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('chat_media')
+        .upload(fileName, file, { upsert: false })
+        
+      if (uploadError) {
+          // Verify if bucket exists
+          if (uploadError.message.includes('Bucket not found')) {
+              toast.error("Bucket 'chat_media' não foi criado no Supabase.")
+              return
+          }
+          throw uploadError
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from('chat_media').getPublicUrl(fileName)
+      
+      let mediaType = 'document'
+      if (file.type.startsWith('image/')) mediaType = 'image'
+      else if (file.type.startsWith('video/')) mediaType = 'video'
+      else if (file.type.startsWith('audio/')) mediaType = 'audio'
+
+      await handleSend(publicUrl, mediaType)
+    } catch (err: any) {
+      toast.error(`Erro ao enviar arquivo: ${err.message}`)
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
@@ -778,6 +844,23 @@ export default function AtendimentoPage() {
               <div className="p-3 border-t border-white/5 bg-[#0D0D12]">
                 <div className="flex items-center gap-2 bg-white/5 rounded-xl border border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
                   <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || isSending}
+                    className="h-8 w-8 text-gray-400 hover:text-white flex-shrink-0"
+                    title="Anexar arquivo"
+                  >
+                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                  </Button>
+                  <input
                     ref={inputRef}
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
@@ -788,8 +871,8 @@ export default function AtendimentoPage() {
                   />
                   <Button
                     size="icon"
-                    onClick={handleSend}
-                    disabled={!newMessage.trim() || isSending}
+                    onClick={() => handleSend()}
+                    disabled={(!newMessage.trim() && !isUploading) || isSending}
                     className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
                   >
                     {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
