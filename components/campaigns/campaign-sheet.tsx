@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
     Sheet,
     SheetContent,
@@ -24,6 +25,7 @@ import { LeadSelector } from "@/components/campaigns/lead-selector"
 const campaignSchema = z.object({
     name: z.string().min(3, "Nome muito curto"),
     text_campanha: z.string().optional(),
+    ia_generation: z.boolean().default(false),
     folder_name: z.string().optional(),
     schedule_days: z.array(z.string()).min(1, "Selecione pelo menos um dia"),
     schedule_start_time: z.string().min(1, "Início obrigatório"),
@@ -62,6 +64,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
         defaultValues: {
             name: "",
             text_campanha: "",
+            ia_generation: false,
             folder_name: "",
             schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
             schedule_start_time: "09:00",
@@ -79,6 +82,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                 form.reset({
                     name: campaignToEdit.name,
                     text_campanha: campaignToEdit.text_campanha || "",
+                    ia_generation: campaignToEdit.ia_generation || false,
                     folder_name: campaignToEdit.folder_name || "",
                     schedule_days: mapDaysToUI(campaignToEdit.schedule_days),
                     schedule_start_time: campaignToEdit.start_time,
@@ -112,6 +116,7 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                 form.reset({
                     name: "",
                     text_campanha: "",
+                    ia_generation: false,
                     folder_name: "",
                     schedule_days: ["SEG", "TER", "QUA", "QUI", "SEX"],
                     schedule_start_time: "09:00",
@@ -207,6 +212,20 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                             <div className="space-y-2">
                                 <Label>Mensagem do Disparo</Label>
                                 <Textarea {...form.register("text_campanha")} placeholder="Olá, tudo bem? Vi que você..." className="h-32 resize-none bg-black/20 border-white/10" />
+                            </div>
+
+                            <div className="flex items-center justify-between rounded-lg border border-white/10 p-4 bg-white/5">
+                                <div className="space-y-0.5">
+                                    <Label className="text-base text-white">Modo IA</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Gere as mensagens de prospecção usando Inteligência Artificial.
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={form.watch("ia_generation")}
+                                    onCheckedChange={(checked) => form.setValue("ia_generation", checked)}
+                                    className="data-[state=checked]:bg-blue-600"
+                                />
                             </div>
 
                             <div className="space-y-2">

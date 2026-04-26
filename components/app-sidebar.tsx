@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Target,
   Lock,
+  Webhook,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -27,6 +28,7 @@ const navigation = [
   { name: "Disparos", href: "/campanhas", icon: Megaphone },
   { name: "Remarketing", href: "#", icon: Target, locked: true },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
+  { name: "Automações", href: "/automacoes", icon: Webhook },
   { name: "Agente IA", href: "/agente", icon: BrainCircuit },
   { name: "Minha Conta", href: "/conta", icon: User },
   { name: "Suporte", href: "/suporte", icon: HelpCircle },

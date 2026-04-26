@@ -6,12 +6,13 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
-  ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip
+  ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { Label as KanbanLabel } from "@/types/kanban"
@@ -35,6 +36,7 @@ interface Conversation {
   is_open: boolean
   labels?: KanbanLabel[]
   lead_id?: string
+  lead_pausado?: boolean | null
   profile_pic_url?: string
 }
 
@@ -117,7 +119,15 @@ function MessageBubble({ message }: { message: Message }) {
             <Paperclip className="h-4 w-4" /> Baixar Anexo
           </a>
         )}
-        <p className="leading-relaxed break-words">{message.content}</p>
+        <p className="leading-relaxed break-words whitespace-pre-wrap">
+          {message.content?.split(/(\*[^*]+\*)/g).map((part, i) =>
+            part.startsWith('*') && part.endsWith('*') ? (
+              <strong key={i}>{part.slice(1, -1)}</strong>
+            ) : (
+              part
+            )
+          )}
+        </p>
         <div className={cn("flex items-center gap-1 mt-1", isMe ? "justify-end" : "justify-start")}>
           <span className={cn("text-[10px]", isMe ? "text-blue-100/70" : "text-gray-500")}>
             {formatTime(message.created_at)}
@@ -166,11 +176,26 @@ export default function AtendimentoPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
+  // Signatures
+  const [availableSignatures, setAvailableSignatures] = useState<string[]>([])
+  const [activeSignature, setActiveSignature] = useState<string>("")
+  const [newSignature, setNewSignature] = useState("")
+
   // ---- Load User ----
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }: { data: { user: { id: string } | null } }) => {
-      if (user) setUserId(user.id)
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
+      if (user) {
+        setUserId(user.id)
+        if (user.user_metadata?.signatures) {
+          setAvailableSignatures(user.user_metadata.signatures)
+        }
+      }
     })
+    
+    const savedSignature = localStorage.getItem('chat_active_signature')
+    if (savedSignature) {
+      setActiveSignature(savedSignature)
+    }
   }, [])
 
   // ---- Auto-open from CRM (?phone=...&name=...) ----
@@ -209,6 +234,7 @@ export default function AtendimentoPage() {
         *,
         leads!leads_conversation_id_fkey (
           id,
+          lead_pausado,
           lead_labels (
             labels (
               id,
@@ -229,6 +255,7 @@ export default function AtendimentoPage() {
         return { 
             ...conv, 
             lead_id: firstLead?.id || conv.lead_id, 
+            lead_pausado: firstLead?.lead_pausado || false,
             labels: flatLabels 
         }
       })
@@ -282,6 +309,7 @@ export default function AtendimentoPage() {
                             ...c, 
                             ...updatedConv,
                             lead_id: c.lead_id || updatedConv.lead_id,
+                            lead_pausado: c.lead_pausado,
                             labels: c.labels
                         }
                     }
@@ -295,6 +323,7 @@ export default function AtendimentoPage() {
                         ...prev, 
                         ...updatedConv,
                         lead_id: prev.lead_id || updatedConv.lead_id,
+                        lead_pausado: prev.lead_pausado,
                         labels: prev.labels
                     }
                 }
@@ -343,7 +372,11 @@ export default function AtendimentoPage() {
   // ---- Send Message ----
   const handleSend = async (mediaUrl?: string, mediaType?: string) => {
     if ((!newMessage.trim() && !mediaUrl) || !selectedConv || isSending) return
-    const content = newMessage.trim() || "[Mídia]"
+    let content = newMessage.trim()
+    if (content && activeSignature) {
+      content = `*${activeSignature}:*\n${content}`
+    }
+    content = content || "[Mídia]"
     setNewMessage("")
     setIsSending(true)
 
@@ -440,7 +473,10 @@ export default function AtendimentoPage() {
   // ---- Nova Conversa ----
   const handleCreateConversation = async () => {
     let phone = newConvPhone.replace(/\D/g, "")
-    const firstMsg = newConvMsg.trim()
+    let firstMsg = newConvMsg.trim()
+    if (firstMsg && activeSignature) {
+      firstMsg = `*${activeSignature}:*\n${firstMsg}`
+    }
 
     if (!phone || phone.length < 10) {
       toast.warning("Digite um número de WhatsApp válido")
@@ -651,6 +687,65 @@ export default function AtendimentoPage() {
     setIsMobileView(true)
   }
 
+  const handleToggleIAPause = async () => {
+    if (!selectedConv?.lead_id) {
+        toast.error("Este contato ainda não está vinculado ao CRM.");
+        return;
+    }
+    const newValue = !selectedConv.lead_pausado;
+    
+    // UI optimistic update
+    setSelectedConv(prev => prev ? { ...prev, lead_pausado: newValue } : prev);
+    setConversations(prev => prev.map(c => c.id === selectedConv?.id ? { ...c, lead_pausado: newValue } : c));
+    
+    try {
+        const { error } = await supabase.from('leads').update({ lead_pausado: newValue }).eq('id', selectedConv.lead_id);
+        if (error) throw error;
+        toast.success(newValue ? "IA silenciada para este contato 🤫" : "IA ativada para este contato 🤖");
+    } catch (err: any) {
+        console.error("Erro ao pausar IA:", err);
+        toast.error("Erro ao alterar o status da IA");
+        // Revert on error
+        setSelectedConv(prev => prev ? { ...prev, lead_pausado: !newValue } : prev);
+        setConversations(prev => prev.map(c => c.id === selectedConv?.id ? { ...c, lead_pausado: !newValue } : c));
+    }
+  }
+
+  // ---- Signatures ----
+  const handleAddSignature = async () => {
+    if (!newSignature.trim()) return
+    const updated = [...availableSignatures, newSignature.trim()]
+    setAvailableSignatures(updated)
+    setNewSignature("")
+    toast.success("Assinatura adicionada")
+    
+    await supabase.auth.updateUser({
+      data: { signatures: updated }
+    })
+  }
+
+  const handleDeleteSignature = async (sig: string) => {
+    const updated = availableSignatures.filter(s => s !== sig)
+    setAvailableSignatures(updated)
+    if (activeSignature === sig) handleSelectSignature("")
+    toast.success("Assinatura removida")
+
+    await supabase.auth.updateUser({
+      data: { signatures: updated }
+    })
+  }
+
+  const handleSelectSignature = (sig: string) => {
+    setActiveSignature(sig)
+    if (sig) {
+      localStorage.setItem('chat_active_signature', sig)
+      toast.success(`Escrevendo como: ${sig}`)
+    } else {
+      localStorage.removeItem('chat_active_signature')
+      toast.success("Assinatura desativada")
+    }
+  }
+
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0)
 
   return (
@@ -843,15 +938,106 @@ export default function AtendimentoPage() {
                       </DropdownMenu>
                   </div>
                 </div>
-                <a
-                  href={`https://wa.me/${selectedConv.contact_phone}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-green-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-green-500/10 border border-white/5"
-                >
-                  <Phone className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">WhatsApp</span>
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleToggleIAPause}
+                    className={cn(
+                        "flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg border",
+                        selectedConv.lead_pausado 
+                            ? "bg-[#D4A373]/10 text-[#D4A373] border-[#D4A373]/20 hover:bg-[#D4A373]/20" 
+                            : "bg-[#00A3FF]/10 text-[#00A3FF] border-[#00A3FF]/20 hover:bg-[#00A3FF]/20"
+                    )}
+                    title={selectedConv.lead_pausado ? "Retomar respostas automáticas da IA" : "Pausar respostas automáticas da IA"}
+                  >
+                    {selectedConv.lead_pausado ? <BotOff className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">{selectedConv.lead_pausado ? "IA Pausada" : "Pausar IA"}</span>
+                  </button>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className={cn(
+                          "flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg border",
+                          activeSignature
+                            ? "bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20"
+                            : "bg-white/5 text-gray-400 border-white/5 hover:bg-white/10"
+                        )}
+                        title="Assinatura de Atendente"
+                      >
+                        <PenTool className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{activeSignature || "Assinatura"}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3 border-[#2A2D35] bg-[#1C1D22] text-sm" align="end">
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="font-medium text-white mb-2 text-xs uppercase tracking-wider text-gray-400">Assinatura Ativa</h4>
+                          {availableSignatures.length === 0 ? (
+                            <p className="text-gray-500 text-xs">Nenhuma assinatura criada.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => handleSelectSignature("")}
+                                className={cn(
+                                  "w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-md transition-colors",
+                                  activeSignature === "" ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5"
+                                )}
+                              >
+                                Nenhum
+                                {activeSignature === "" && <Check className="h-3 w-3" />}
+                              </button>
+                              {availableSignatures.map(sig => (
+                                <div key={sig} className="flex items-center group">
+                                  <button
+                                    onClick={() => handleSelectSignature(sig)}
+                                    className={cn(
+                                      "flex-1 flex items-center justify-between px-2 py-1.5 text-xs rounded-md transition-colors",
+                                      activeSignature === sig ? "bg-purple-500/20 text-purple-400" : "text-gray-300 hover:bg-white/5"
+                                    )}
+                                  >
+                                    {sig}
+                                    {activeSignature === sig && <Check className="h-3 w-3" />}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSignature(sig); }}
+                                    className="p-1.5 opacity-0 group-hover:opacity-100 hover:text-red-400 text-gray-500 transition-all rounded-md hover:bg-red-500/10"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="pt-3 border-t border-white/5">
+                          <label className="text-xs text-gray-400 mb-1.5 block">Nova Assinatura</label>
+                          <div className="flex gap-2">
+                            <Input 
+                              value={newSignature}
+                              onChange={e => setNewSignature(e.target.value)}
+                              placeholder="Ex: Ana"
+                              className="h-7 text-xs bg-black/20 border-white/10"
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddSignature() }}
+                            />
+                            <Button onClick={handleAddSignature} size="sm" variant="secondary" className="h-7 px-2 bg-white/10 hover:bg-white/20">
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
+                  <a
+                    href={`https://wa.me/${selectedConv.contact_phone}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-green-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-green-500/10 border border-white/5"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </a>
+                </div>
               </div>
 
               {/* Messages Area */}
@@ -878,6 +1064,12 @@ export default function AtendimentoPage() {
 
               {/* Input Bar */}
               <div className="p-3 border-t border-white/5 bg-[#0D0D12]">
+                {activeSignature && (
+                  <div className="mb-2 px-1 text-[10px] text-gray-500 flex items-center gap-1.5">
+                    <PenTool className="h-3 w-3 text-purple-400" />
+                    Enviando mensagem como: <strong className="text-gray-300 font-medium">{activeSignature}</strong>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 bg-white/5 rounded-xl border border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
                   <input
                     type="file"
@@ -896,13 +1088,20 @@ export default function AtendimentoPage() {
                   >
                     {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   </Button>
-                  <input
-                    ref={inputRef}
+                  <textarea
+                    ref={inputRef as any}
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Digite uma mensagem..."
-                    className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600 outline-none"
+                    rows={1}
+                    className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600 outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
+                    style={{ minHeight: '32px', maxHeight: '120px' }}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = '32px';
+                      target.style.height = `${target.scrollHeight}px`;
+                    }}
                     disabled={isSending}
                   />
                   <Button

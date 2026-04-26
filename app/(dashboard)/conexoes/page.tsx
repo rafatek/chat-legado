@@ -714,9 +714,47 @@ export default function ConexoesPage() {
         </Card>
       </div>
 
-      {/* Webhook configurado automaticamente — sem exposição ao cliente */}
-
-
+      {/* Webhook Configuration Card */}
+      <Card className="border-border bg-card/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Webhook className="h-5 w-5 text-purple-500" />
+            Configuração de Webhook
+          </CardTitle>
+          <CardDescription>
+            URL para recebimento de mensagens e eventos (integração UazAPI / N8N).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">URL de Retorno (Callback):</label>
+              <div className="flex bg-black/20 border border-white/5 rounded-md p-1 h-10 items-center">
+                <code className="text-xs text-muted-foreground flex-1 px-3 truncate select-all">
+                  {webhookToken ? `${process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : '')}/api/webhook/${webhookToken}` : "Gerando..."}
+                </code>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <Button variant="secondary" size="sm" onClick={handleCopyWebhookUrl} className="gap-2">
+              <Copy className="h-4 w-4" />
+              Copiar URL
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleGenerateWebhookToken} disabled={webhookLoading} className="gap-2">
+              {webhookLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Gerar Novo Token
+            </Button>
+            {isConnected && (
+              <Button variant="default" size="sm" onClick={handleReconfigureWebhook} className="gap-2 bg-purple-600 hover:bg-purple-700 ml-auto md:ml-0 lg:ml-auto">
+                <RefreshCcw className="h-4 w-4" />
+                Sincronizar Webhook
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <style jsx>{`
         @keyframes scan {

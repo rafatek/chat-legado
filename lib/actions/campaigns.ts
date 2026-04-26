@@ -12,6 +12,7 @@ interface CreateCampaignData {
     min_interval_seconds: number
     max_interval_seconds: number
     text_campanha?: string
+    ia_generation?: boolean
     selected_lead_ids?: string[]
 }
 
@@ -81,6 +82,7 @@ export async function createCampaign(data: CreateCampaignData) {
             min_interval_min: min_int_min,
             max_interval_min: max_int_min,
             text_campanha: data.text_campanha,
+            ia_generation: data.ia_generation ?? false,
             server_id: server_id,
             status: 'paused'
         }
@@ -299,6 +301,7 @@ export async function updateCampaign(data: UpdateCampaignData) {
                 min_interval_min: min_int,
                 max_interval_min: max_int,
                 text_campanha: data.text_campanha,
+                ia_generation: data.ia_generation ?? false,
             })
             .eq('id', data.id)
             .eq('user_id', user.id)
