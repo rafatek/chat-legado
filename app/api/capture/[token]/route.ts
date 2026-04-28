@@ -190,32 +190,45 @@ export async function POST(
         return NextResponse.json({ error: 'Nenhuma conexão do WhatsApp para este usuário.' }, { status: 400, headers: corsHeaders })
     }
 
+    // Restaurar 55 para envio na UazAPI
+    let uazPhone = phone.length === 11 || phone.length === 10 ? `55${phone}` : phone
+
     // Enviar API Request (Primeiro enviar, depois salvar no banco se der certo)
     const baseUrl = (process.env.NEXT_PUBLIC_UAZAPI_URL || '').replace(/\/$/, '')
     let sendSuccess = false
-    let uazData = null
+    let uazData: any = null
 
-    try {
-        const url = `${baseUrl}/message/sendText`
-        const uazRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'token': connection.instance_key,
-            },
-            body: JSON.stringify({ number: phone, text: finalMessage }),
-        })
+    const endpoints = [
+        { path: '/message/sendText', body: { number: uazPhone, text: finalMessage } },
+        { path: '/message/text',     body: { number: uazPhone, text: finalMessage } },
+        { path: '/send/text',        body: { number: uazPhone, text: finalMessage } },
+        { path: '/message/sendText', body: { number: uazPhone, textMessage: { text: finalMessage } } },
+    ]
 
-        const responseText = await uazRes.text()
-        if (uazRes.ok) {
-            try { uazData = JSON.parse(responseText) } catch { uazData = {} }
-            const isSuccessBase = uazData?.key || uazData?.message?.key || uazData?.status === 'SUCCESS' || uazData?.id
-            if (isSuccessBase) {
-                sendSuccess = true
+    for (const ep of endpoints) {
+        try {
+            const url = `${baseUrl}${ep.path}`
+            const uazRes = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'token': connection.instance_key,
+                },
+                body: JSON.stringify(ep.body),
+            })
+
+            const responseText = await uazRes.text()
+            if (uazRes.ok) {
+                try { uazData = JSON.parse(responseText) } catch { uazData = {} }
+                const isSuccessBase = uazData?.key || uazData?.message?.key || uazData?.status === 'SUCCESS' || uazData?.id || uazData?.messageId
+                if (isSuccessBase) {
+                    sendSuccess = true
+                    break
+                }
             }
+        } catch (e) {
+            console.error('Fetch UazAPI Error:', e);
         }
-    } catch (e) {
-         console.error('Fetch UazAPI Error:', e);
     }
 
     // Finalizar: Salvar a mensagem no banco apenas se for enviada com sucesso
@@ -236,6 +249,22 @@ export async function POST(
             last_message_at: new Date().toISOString(),
             is_open: true
         }).eq('id', conversation.id)
+
+        // Sincronizar Memória do N8N (Redis) via Webhook
+        const n8nWebhookUrl = process.env.N8N_REDIS_WEBHOOK_URL || 'https://webhook.legadomidia.com/webhook/677cdace-3150-4926-bbc6-e371d2a5f914'
+        try {
+            await fetch(n8nWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    instance_name: connection.instance_name,
+                    whatsapp: phone,
+                    message: finalMessage
+                })
+            })
+        } catch (e) {
+            console.error('Erro ao notificar N8N Webhook:', e)
+        }
     }
 
     return NextResponse.json({ success: true, sent: sendSuccess }, { headers: corsHeaders })

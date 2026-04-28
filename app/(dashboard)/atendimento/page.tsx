@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
-  ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool
+  ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
+  ChevronRight, DollarSign, FileText, User
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Label as KanbanLabel } from "@/types/kanban"
 import {
@@ -180,6 +182,17 @@ export default function AtendimentoPage() {
   const [availableSignatures, setAvailableSignatures] = useState<string[]>([])
   const [activeSignature, setActiveSignature] = useState<string>("")
   const [newSignature, setNewSignature] = useState("")
+
+  // Sidebar do Contato
+  const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(false)
+  const [leadDetails, setLeadDetails] = useState<{
+    id?: string;
+    full_name: string;
+    detalhes: string;
+    valor: string;
+  } | null>(null)
+  const [isSavingLead, setIsSavingLead] = useState(false)
+  const [isLoadingLead, setIsLoadingLead] = useState(false)
 
   // ---- Load User ----
   useEffect(() => {
@@ -368,6 +381,66 @@ export default function AtendimentoPage() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
   useEffect(() => { if (selectedConv) setTimeout(() => inputRef.current?.focus(), 100) }, [selectedConv])
+
+  // ---- Lead Sidebar Functions ----
+  const fetchLeadDetails = useCallback(async () => {
+    if (!selectedConv?.lead_id) return
+    setIsLoadingLead(true)
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, full_name, detalhes, valor')
+      .eq('id', selectedConv.lead_id)
+      .single()
+    if (!error && data) {
+      setLeadDetails({
+        id: data.id,
+        full_name: data.full_name || '',
+        detalhes: data.detalhes || '',
+        valor: data.valor?.toString() || ''
+      })
+    }
+    setIsLoadingLead(false)
+  }, [selectedConv?.lead_id])
+
+  useEffect(() => {
+    if (isContactSidebarOpen && selectedConv?.lead_id) {
+      fetchLeadDetails()
+    } else {
+      setLeadDetails(null)
+    }
+  }, [isContactSidebarOpen, selectedConv?.lead_id, fetchLeadDetails])
+
+  const handleUpdateLead = async () => {
+    if (!selectedConv?.lead_id || !leadDetails) return
+    setIsSavingLead(true)
+    
+    // Preparar valor numerico seguro
+    let safeValor: number | null = null
+    if (leadDetails.valor) {
+        const parsed = parseFloat(leadDetails.valor.replace(',', '.'))
+        if (!isNaN(parsed)) safeValor = parsed
+    }
+
+    const { error } = await supabase
+      .from('leads')
+      .update({
+        full_name: leadDetails.full_name,
+        detalhes: leadDetails.detalhes,
+        valor: safeValor
+      })
+      .eq('id', selectedConv.lead_id)
+
+    if (error) {
+      toast.error("Erro ao salvar dados do contato.")
+    } else {
+      toast.success("Dados atualizados com sucesso!")
+      // Atualizar o nome no selectedConv e conversations locais para refletir a mudanca instantaneamente
+      setConversations(prev => prev.map(c => c.id === selectedConv.id ? { ...c, contact_name: leadDetails.full_name } : c))
+      setSelectedConv(prev => prev ? { ...prev, contact_name: leadDetails.full_name } : prev)
+    }
+    setIsSavingLead(false)
+  }
+
 
   // ---- Send Message ----
   const handleSend = async (mediaUrl?: string, mediaType?: string) => {
@@ -882,13 +955,17 @@ export default function AtendimentoPage() {
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </button>
-                <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" picUrl={selectedConv.profile_pic_url} />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-white">{selectedConv.contact_name || selectedConv.contact_phone}</p>
-                      <p className="text-[11px] text-gray-500 font-mono hidden sm:block">{selectedConv.contact_phone}</p>
-                  </div>
-                  
+                <button 
+                  onClick={() => setIsContactSidebarOpen(prev => !prev)}
+                  className="flex items-center gap-3 hover:bg-white/5 p-1.5 -ml-1.5 rounded-lg transition-colors text-left flex-1"
+                  title="Ver dados do contato"
+                >
+                  <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" picUrl={selectedConv.profile_pic_url} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-white truncate">{selectedConv.contact_name || selectedConv.contact_phone}</p>
+                        <p className="text-[11px] text-gray-500 font-mono hidden sm:block flex-shrink-0">{selectedConv.contact_phone}</p>
+                    </div>
                   {/* Etiquetas no Cabeçalho do Chat */}
                   <div className="flex flex-wrap items-center gap-1 mt-1">
                       {selectedConv.labels && selectedConv.labels.map(label => (
@@ -910,7 +987,11 @@ export default function AtendimentoPage() {
                       
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                              <button className="flex items-center justify-center h-4 w-4 rounded-sm border border-dashed border-gray-600 hover:border-gray-400 hover:bg-white/5 transition-colors text-gray-400 hover:text-white" title="Adicionar etiqueta ao lead">
+                              <button 
+                                onClick={(e) => e.stopPropagation()} // Prevent sidebar toggle when clicking plus
+                                className="flex items-center justify-center h-4 w-4 rounded-sm border border-dashed border-gray-600 hover:border-gray-400 hover:bg-white/5 transition-colors text-gray-400 hover:text-white" 
+                                title="Adicionar etiqueta ao lead"
+                              >
                                   <Plus className="h-3 w-3" />
                               </button>
                           </DropdownMenuTrigger>
@@ -924,7 +1005,10 @@ export default function AtendimentoPage() {
                                         <DropdownMenuItem 
                                             key={lbl.id}
                                             disabled={hasLabel}
-                                            onClick={() => handleAddLabel(selectedConv.lead_id, lbl.id)}
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleAddLabel(selectedConv.lead_id, lbl.id)
+                                            }}
                                             className="text-xs text-gray-200 cursor-pointer flex items-center gap-2 hover:bg-white/5 data-[highlighted]:bg-white/10 outline-none"
                                         >
                                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: lbl.color }} />
@@ -938,6 +1022,7 @@ export default function AtendimentoPage() {
                       </DropdownMenu>
                   </div>
                 </div>
+                </button>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleToggleIAPause}
@@ -1145,6 +1230,107 @@ export default function AtendimentoPage() {
             </div>
           )}
         </div>
+
+        {/* ===== CONTACT SIDEBAR (RIGHT) ===== */}
+        {isContactSidebarOpen && selectedConv && (
+          <div className="w-72 flex-shrink-0 border-l border-white/5 bg-[#0D0D12] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Dados do Contato</span>
+              <button
+                onClick={() => setIsContactSidebarOpen(false)}
+                className="text-gray-500 hover:text-white transition-colors p-1 rounded-md hover:bg-white/5"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Avatar + Phone */}
+            <div className="flex flex-col items-center py-5 px-4 border-b border-white/5 gap-2">
+              <ContactAvatar
+                name={selectedConv.contact_name || selectedConv.contact_phone}
+                phone={selectedConv.contact_phone}
+                size="lg"
+                picUrl={selectedConv.profile_pic_url}
+              />
+              <p className="text-sm font-semibold text-white mt-1">{selectedConv.contact_name || selectedConv.contact_phone}</p>
+              <p className="text-xs font-mono text-gray-500">{selectedConv.contact_phone}</p>
+            </div>
+
+            {/* Form */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+              {isLoadingLead ? (
+                <div className="flex items-center justify-center h-24">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#00A3FF]" />
+                </div>
+              ) : leadDetails ? (
+                <>
+                  {/* Nome */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                      <User className="h-3 w-3" /> Nome
+                    </Label>
+                    <Input
+                      value={leadDetails.full_name}
+                      onChange={(e) => setLeadDetails(prev => prev ? { ...prev, full_name: e.target.value } : prev)}
+                      placeholder="Nome do lead"
+                      className="h-8 text-sm bg-white/5 border-white/10 text-gray-100 focus-visible:ring-[#00A3FF]/40"
+                    />
+                  </div>
+
+                  {/* Valor do Orçamento */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                      <DollarSign className="h-3 w-3" /> Valor do Orçamento
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">R$</span>
+                      <Input
+                        value={leadDetails.valor}
+                        onChange={(e) => setLeadDetails(prev => prev ? { ...prev, valor: e.target.value } : prev)}
+                        placeholder="0,00"
+                        className="h-8 text-sm pl-8 bg-white/5 border-white/10 text-gray-100 focus-visible:ring-[#00A3FF]/40"
+                        type="text"
+                        inputMode="decimal"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Detalhes / Notas */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                      <FileText className="h-3 w-3" /> Detalhes / Anotações
+                    </Label>
+                    <Textarea
+                      value={leadDetails.detalhes}
+                      onChange={(e) => setLeadDetails(prev => prev ? { ...prev, detalhes: e.target.value } : prev)}
+                      placeholder="Resumo da conversa, observações, lembretes..."
+                      rows={6}
+                      className="text-sm bg-white/5 border-white/10 text-gray-100 resize-none focus-visible:ring-[#00A3FF]/40 placeholder:text-gray-600"
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-gray-600 text-center pt-4">Este contato não possui um lead vinculado.</p>
+              )}
+            </div>
+
+            {/* Save Button */}
+            {leadDetails && (
+              <div className="p-4 border-t border-white/5">
+                <Button
+                  onClick={handleUpdateLead}
+                  disabled={isSavingLead}
+                  className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-8 text-sm gap-2"
+                >
+                  {isSavingLead ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  {isSavingLead ? "Salvando..." : "Salvar Dados"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* ===== DIALOG: Nova Conversa ===== */}
