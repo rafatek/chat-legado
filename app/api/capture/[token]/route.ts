@@ -133,7 +133,7 @@ export async function POST(
             full_name: rawName,
             whatsapp: phone,
             origin: 'Outros', // Usar hardcoded para nao quebrar a constraint leads_origin_check
-            lead_pausado: true // Pausado por precaução para evitar IA de atropelar
+            lead_pausado: webhook.create_paused !== false // Usa a conf. do webhook, padrão true para evitar IA de atropelar
         }).select().single()
         
         if (leadError) {
@@ -164,6 +164,13 @@ export async function POST(
           return NextResponse.json({ error: 'Erro de Banco de Dados ao criar Conversa', details: convError.message }, { status: 500, headers: corsHeaders })
         }
         conversation = newConv
+    }
+
+    // Vincular o conversation_id ao lead recém-criado ou já existente
+    if (!lead.conversation_id || lead.conversation_id !== conversation.id) {
+        await supabaseAdmin.from('leads').update({
+            conversation_id: conversation.id
+        }).eq('id', lead.id)
     }
 
     // 7. Inject Variables na Mensagem Template

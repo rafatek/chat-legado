@@ -23,6 +23,7 @@ interface CaptureWebhook {
     mapped_phone_key: string | null
     mapped_name_key: string | null
     message_template: string
+    create_paused: boolean
 }
 
 export default function AutomacaoConfigPage() {
@@ -100,7 +101,8 @@ export default function AutomacaoConfigPage() {
                     is_testing: webhook.is_testing,
                     mapped_phone_key: webhook.mapped_phone_key,
                     mapped_name_key: webhook.mapped_name_key,
-                    message_template: webhook.message_template
+                    message_template: webhook.message_template,
+                    create_paused: webhook.create_paused
                 })
                 .eq('id', webhook.id)
 
@@ -225,13 +227,21 @@ export default function AutomacaoConfigPage() {
                         </Button>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-6">
                          <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">Automação Ativa</span>
                             <Switch 
                                 checked={webhook.active}
                                 onCheckedChange={(checked) => setWebhook({ ...webhook, active: checked })}
                                 className="data-[state=checked]:bg-green-500"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">Pausar IA no Novo Lead</span>
+                            <Switch 
+                                checked={webhook.create_paused !== false}
+                                onCheckedChange={(checked) => setWebhook({ ...webhook, create_paused: checked })}
+                                className="data-[state=checked]:bg-yellow-500"
                             />
                         </div>
                     </div>

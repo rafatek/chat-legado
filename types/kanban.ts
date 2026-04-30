@@ -9,6 +9,7 @@ export type Lead = {
     full_name: string
     value?: number
     price?: number // Handling potential variations, assuming 'value' based on context but schema check might reveal price
+    valor?: number
     column_id: string
     whatsapp: string
     message_sent: boolean

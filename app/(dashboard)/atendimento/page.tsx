@@ -955,10 +955,18 @@ export default function AtendimentoPage() {
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </button>
-                <button 
+                <div 
                   onClick={() => setIsContactSidebarOpen(prev => !prev)}
-                  className="flex items-center gap-3 hover:bg-white/5 p-1.5 -ml-1.5 rounded-lg transition-colors text-left flex-1"
+                  className="flex items-center gap-3 hover:bg-white/5 p-1.5 -ml-1.5 rounded-lg transition-colors text-left flex-1 cursor-pointer"
                   title="Ver dados do contato"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsContactSidebarOpen(prev => !prev);
+                    }
+                  }}
                 >
                   <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" picUrl={selectedConv.profile_pic_url} />
                   <div className="flex-1 min-w-0">
@@ -976,7 +984,7 @@ export default function AtendimentoPage() {
                           >
                             <span>{label.title}</span>
                             <button 
-                                onClick={() => handleRemoveLabel(selectedConv.lead_id, label.id)} 
+                                onClick={(e) => { e.stopPropagation(); handleRemoveLabel(selectedConv.lead_id, label.id); }} 
                                 className="hover:bg-black/20 rounded-sm p-[1px] transition-colors"
                                 title="Remover etiqueta"
                             >
@@ -995,7 +1003,7 @@ export default function AtendimentoPage() {
                                   <Plus className="h-3 w-3" />
                               </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48 bg-[#1A1A23] border-white/10">
+                          <DropdownMenuContent align="start" className="w-48 bg-[#1A1A23] border-white/10" onClick={(e) => e.stopPropagation()}>
                               {availableLabels.length === 0 ? (
                                   <div className="px-2 py-2 text-xs text-gray-500 text-center">Nenhuma etiqueta criada no CRM</div>
                               ) : (
@@ -1022,7 +1030,7 @@ export default function AtendimentoPage() {
                       </DropdownMenu>
                   </div>
                 </div>
-                </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleToggleIAPause}

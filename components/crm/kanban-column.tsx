@@ -44,10 +44,18 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
         }
     }
 
+    const totalColumnValue = column.leads.reduce((acc, lead) => {
+        let val = 0
+        if (lead.valor !== undefined) val = Number(lead.valor)
+        else if (lead.value !== undefined) val = lead.value / 100
+        else if (lead.price !== undefined) val = lead.price / 100
+        return acc + val
+    }, 0)
+
     return (
         <div className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
             {/* Column Header */}
-            <div className="flex items-center justify-between p-4 mb-3 rounded-lg bg-[#111114] border border-white/5 group">
+            <div className="flex items-center justify-between p-4 mb-2 rounded-lg bg-[#111114] border border-white/5 group">
                 <div className="flex flex-col gap-1.5 flex-1 mr-2">
                     <div className="flex items-center gap-2">
                         {isEditing ? (
@@ -104,6 +112,18 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
                     </Button>
                 )}
             </div>
+
+            {/* Total Value row */}
+            {totalColumnValue > 0 && (
+                <div className="px-2 mb-3">
+                    <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded px-3 py-1.5">
+                        <span className="text-[10px] uppercase font-bold text-emerald-500/80 tracking-wider">Total</span>
+                        <span className="text-xs font-bold text-emerald-400">
+                            R$ {totalColumnValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {/* Droppable Area */}
             <Droppable droppableId={column.id} type="lead">

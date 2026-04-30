@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DragDropContext, DropResult, Droppable, Draggable } from "@hello-pangea/dnd"
 import { KanbanColumn } from "./kanban-column"
 import { Column, Label as KanbanLabel } from "@/types/kanban"
@@ -51,6 +51,10 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
     
     // Board State
     const [columns, setColumns] = useState<Column[]>(initialColumns)
+
+    useEffect(() => {
+        setColumns(initialColumns)
+    }, [initialColumns])
     const [isDeleting, setIsDeleting] = useState(false)
     const [columnToDelete, setColumnToDelete] = useState<Column | null>(null)
 

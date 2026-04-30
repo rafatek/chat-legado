@@ -94,6 +94,7 @@ export default async function CRMPage() {
       full_name: lead.full_name,
       value: lead.value,
       price: lead.price,
+      valor: lead.valor,
       column_id: lead.column_id,
       whatsapp: lead.whatsapp,
       message_sent: lead.message_sent,
