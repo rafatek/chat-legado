@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/sheet"
 import { toast } from "sonner"
 import { createCampaign, updateCampaign, getCampaignLeads } from "@/lib/actions/campaigns"
-import { Loader2, Users, Filter } from "lucide-react"
+import { Loader2, Users, Filter, Paperclip, Image as ImageIcon, Video, X } from "lucide-react"
 import { LeadSelector } from "@/components/campaigns/lead-selector"
+import { supabase } from "@/lib/supabase"
 
 const campaignSchema = z.object({
     name: z.string().min(3, "Nome muito curto"),
@@ -32,6 +33,8 @@ const campaignSchema = z.object({
     schedule_end_time: z.string().min(1, "Fim obrigatório"),
     min_interval_seconds: z.coerce.number().min(5),
     max_interval_seconds: z.coerce.number().min(5),
+    link_midia: z.string().optional(),
+    tipo_midia: z.string().optional(),
 })
 
 type CampaignForm = z.infer<typeof campaignSchema>
@@ -52,6 +55,9 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
     const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
     const [lockedLeadIds, setLockedLeadIds] = useState<Set<string>>(new Set())
 
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
     // Convert API days (1-7) to UI days STRINGS
     const mapDaysToUI = (days?: number[]) => {
         if (!days) return ["SEG", "TER", "QUA", "QUI", "SEX"]
@@ -71,6 +77,8 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
             schedule_end_time: "18:00",
             min_interval_seconds: 5,
             max_interval_seconds: 20,
+            link_midia: "",
+            tipo_midia: "",
         },
     })
 
@@ -89,6 +97,8 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                     schedule_end_time: campaignToEdit.end_time,
                     min_interval_seconds: campaignToEdit.min_interval_min || 5, // Careful with naming convention mismatch (min/sec)
                     max_interval_seconds: campaignToEdit.max_interval_min || 20,
+                    link_midia: campaignToEdit.link_midia || "",
+                    tipo_midia: campaignToEdit.tipo_midia || "",
                 })
 
                 // Fetch existing leads for this campaign
@@ -123,6 +133,8 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                     schedule_end_time: "18:00",
                     min_interval_seconds: 5,
                     max_interval_seconds: 20,
+                    link_midia: "",
+                    tipo_midia: "",
                 })
                 setSelectedLeadIds([])
                 setSelectedLeadsCount(0)
@@ -135,6 +147,69 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
         setSelectedLeadIds(ids)
         setSelectedLeadsCount(ids.length)
         form.setValue("folder_name", folderName)
+    }
+
+    const linkMidia = form.watch("link_midia")
+    const tipoMidia = form.watch("tipo_midia")
+
+    // Enforce logic: if media is present, IA cannot be enabled
+    useEffect(() => {
+        if (linkMidia) {
+            form.setValue("ia_generation", false)
+        }
+    }, [linkMidia, form])
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        if (file.size > 15 * 1024 * 1024) {
+            toast.error("O arquivo deve ter no máximo 15MB")
+            return
+        }
+
+        setIsUploadingMedia(true)
+        try {
+            const fileExt = file.name.split('.').pop()
+            const fileName = `campaigns/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+
+            const { error: uploadError } = await supabase.storage
+                .from('chat_media')
+                .upload(fileName, file, { upsert: false })
+
+            if (uploadError) {
+                if (uploadError.message.includes('Bucket not found')) {
+                    toast.error("Bucket 'chat_media' não encontrado no Supabase.")
+                    return
+                }
+                throw uploadError
+            }
+
+            const { data: { publicUrl } } = supabase.storage.from('chat_media').getPublicUrl(fileName)
+
+            let mediaType = 'document'
+            if (file.type.startsWith('image/')) mediaType = 'image'
+            else if (file.type.startsWith('video/')) mediaType = 'video'
+
+            if (mediaType !== 'image' && mediaType !== 'video') {
+                toast.error("Apenas imagens e vídeos são permitidos para campanhas.")
+                return
+            }
+
+            form.setValue("link_midia", publicUrl)
+            form.setValue("tipo_midia", mediaType)
+            form.setValue("ia_generation", false)
+        } catch (err: any) {
+            toast.error(`Erro ao enviar arquivo: ${err.message}`)
+        } finally {
+            setIsUploadingMedia(false)
+            if (fileInputRef.current) fileInputRef.current.value = ""
+        }
+    }
+
+    const removeMedia = () => {
+        form.setValue("link_midia", "")
+        form.setValue("tipo_midia", "")
     }
 
     const onSubmit = async (data: CampaignForm) => {
@@ -212,6 +287,58 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                             <div className="space-y-2">
                                 <Label>Mensagem do Disparo</Label>
                                 <Textarea {...form.register("text_campanha")} placeholder="Olá, tudo bem? Vi que você..." className="h-32 resize-none bg-black/20 border-white/10" />
+                                
+                                {/* Anexo de Mídia */}
+                                <div className="mt-2">
+                                    <input 
+                                        type="file" 
+                                        accept="image/*,video/*" 
+                                        className="hidden" 
+                                        ref={fileInputRef} 
+                                        onChange={handleFileUpload} 
+                                    />
+                                    
+                                    {!linkMidia ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-white/10 bg-white/5 hover:bg-white/10 text-xs text-muted-foreground"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={isUploadingMedia}
+                                        >
+                                            {isUploadingMedia ? (
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Paperclip className="h-4 w-4 mr-2" />
+                                            )}
+                                            Anexar Imagem ou Vídeo
+                                        </Button>
+                                    ) : (
+                                        <div className="relative inline-block mt-2 rounded-lg border border-white/10 bg-black/20 p-2 overflow-hidden max-w-[200px]">
+                                            <Button 
+                                                type="button" 
+                                                variant="destructive" 
+                                                size="icon" 
+                                                className="absolute top-1 right-1 h-6 w-6 z-10 rounded-full" 
+                                                onClick={removeMedia}
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                            {tipoMidia === 'image' ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={linkMidia} alt="Preview" className="w-full h-auto rounded-md object-cover" />
+                                            ) : (
+                                                <div className="flex items-center justify-center bg-black/40 h-24 rounded-md">
+                                                    <Video className="h-8 w-8 text-blue-400" />
+                                                </div>
+                                            )}
+                                            <div className="text-[10px] text-center mt-1 text-muted-foreground truncate">
+                                                Mídia anexada ({tipoMidia})
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="flex items-center justify-between rounded-lg border border-white/10 p-4 bg-white/5">
@@ -219,11 +346,17 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
                                     <Label className="text-base text-white">Modo IA</Label>
                                     <p className="text-sm text-muted-foreground">
                                         Gere as mensagens de prospecção usando Inteligência Artificial.
+                                        {linkMidia && (
+                                            <span className="block text-red-400 text-xs mt-1">
+                                                * Desativado pois há uma mídia anexada.
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                                 <Switch
                                     checked={form.watch("ia_generation")}
                                     onCheckedChange={(checked) => form.setValue("ia_generation", checked)}
+                                    disabled={!!linkMidia}
                                     className="data-[state=checked]:bg-blue-600"
                                 />
                             </div>
