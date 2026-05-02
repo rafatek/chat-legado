@@ -374,6 +374,11 @@ export default function AtendimentoPage() {
         (payload: { new: Message }) => {
           if (!payload.new.content?.trim() && !payload.new.media_url) return
           setMessages(prev => prev.find(m => m.id === payload.new.id || (m.whatsapp_message_id && m.whatsapp_message_id === payload.new.whatsapp_message_id)) ? prev : [...prev, payload.new as Message])
+          
+          // Se a conversa está aberta e recebemos uma mensagem do lead, zera o contador no banco
+          if (!payload.new.from_me && selectedConv) {
+            supabase.from("conversations").update({ unread_count: 0 }).eq("id", selectedConv.id).then()
+          }
         })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
