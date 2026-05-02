@@ -14,6 +14,7 @@ import {
   Target,
   Lock,
   Webhook,
+  ShieldAlert,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -38,6 +39,7 @@ export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [userName, setUserName] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -47,11 +49,12 @@ export function AppSidebar() {
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name')
+            .select('full_name, is_admin')
             .eq('id', user.id)
             .single()
 
           setUserName(profile?.full_name || user.email?.split('@')[0] || "Usuário")
+          setIsAdmin(profile?.is_admin || false)
         }
       } catch (error) {
         console.error("Error fetching user details", error)
@@ -117,6 +120,21 @@ export function AppSidebar() {
             </Link>
           )
         })}
+
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-widest transition-all duration-200 mt-4",
+              pathname === "/admin"
+                ? "bg-red-500/10 text-red-500 border border-red-500/20"
+                : "text-red-500/70 hover:bg-red-500/10 hover:text-red-500",
+            )}
+          >
+            <ShieldAlert className={cn("h-4 w-4", pathname === "/admin" ? "text-red-500" : "text-red-500/70")} />
+            Administração
+          </Link>
+        )}
       </nav>
 
       <div className="border-t border-white/5 p-4 space-y-3 bg-[#0A0A12]/50">
