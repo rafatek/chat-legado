@@ -15,15 +15,15 @@ import { useState, useEffect } from "react"
 import { OnboardingTour } from "@/components/onboarding-tour"
 
 const TUTORIAL_LINKS: Record<string, string> = {
-  "/dashboard": "https://youtu.be/MPCgdYWaanY",
-  "/leads": "https://youtu.be/8gtc47BCyjo",
-  "/crm": "https://youtu.be/MfCrCOlJuPA",
-  "/campanhas": "https://youtu.be/AmQAzkE10vs",
-  "/conexoes": "https://youtu.be/sJFOEWAbiEY",
-  "/agente": "https://youtu.be/UEUf6qbG_p0",
-  "/ferramentas": "https://youtu.be/wkH6ubS3cxk",
-  "/conta": "https://youtu.be/1AvdUmQET_w",
-  "/suporte": "https://youtu.be/lEqpDwwN9i0",
+  "/dashboard": "",
+  "/leads": "",
+  "/crm": "",
+  "/campanhas": "",
+  "/conexoes": "",
+  "/agente": "",
+  "/ferramentas": "",
+  "/conta": "",
+  "/suporte": "",
 }
 
 const getVideoId = (url: string) => {

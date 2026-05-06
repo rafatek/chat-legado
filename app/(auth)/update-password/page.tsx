@@ -243,51 +243,53 @@ export default function UpdatePasswordPage() {
                         <CardContent className="space-y-6">
                             {!isSuccess ? (
                                 <>
-                                    <div className={`space-y-2 transition-all duration-700 delay-500 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
-                                        <Label htmlFor="password" className="text-xs uppercase tracking-widest text-gray-400">Nova Senha</Label>
-                                        <div className="relative">
-                                            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                                                id="password" placeholder="••••••••" required
-                                                className={`border-0 border-b rounded-none bg-transparent focus:ring-0 px-0 text-white placeholder:text-gray-600 transition-all duration-300
-                          ${isError ? "border-red-500/50 focus:border-red-500" : "border-white/10 focus:border-blue-400"}
-                        `}
-                                            />
+                                    <form onSubmit={handleUpdate} className="space-y-6">
+                                        <div className={`space-y-2 transition-all duration-700 delay-500 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
+                                            <Label htmlFor="password" className="text-xs uppercase tracking-widest text-gray-400">Nova Senha</Label>
+                                            <div className="relative">
+                                                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                                                    id="password" placeholder="••••••••" required
+                                                    className={`border-0 border-b rounded-none bg-transparent focus:ring-0 px-0 text-white placeholder:text-gray-600 transition-all duration-300
+                            ${isError ? "border-red-500/50 focus:border-red-500" : "border-white/10 focus:border-blue-400"}
+                            `}
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div className={`space-y-2 transition-all duration-700 delay-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
-                                        <Label htmlFor="confirmPassword" className="text-xs uppercase tracking-widest text-gray-400">Confirmar Senha</Label>
-                                        <div className="relative">
-                                            <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-                                                id="confirmPassword" placeholder="••••••••" required
-                                                className={`border-0 border-b rounded-none bg-transparent focus:ring-0 px-0 text-white placeholder:text-gray-600 transition-all duration-300
-                          ${isError ? "border-red-500/50 focus:border-red-500" : "border-white/10 focus:border-blue-400"}
-                        `}
-                                            />
+                                        <div className={`space-y-2 transition-all duration-700 delay-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
+                                            <Label htmlFor="confirmPassword" className="text-xs uppercase tracking-widest text-gray-400">Confirmar Senha</Label>
+                                            <div className="relative">
+                                                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                                                    id="confirmPassword" placeholder="••••••••" required
+                                                    className={`border-0 border-b rounded-none bg-transparent focus:ring-0 px-0 text-white placeholder:text-gray-600 transition-all duration-300
+                            ${isError ? "border-red-500/50 focus:border-red-500" : "border-white/10 focus:border-blue-400"}
+                            `}
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    {message && (
-                                        <div className={`text-sm ${isError ? "text-red-400" : "text-green-400"}`}>
-                                            {message}
+                                        {message && (
+                                            <div className={`text-sm ${isError ? "text-red-400" : "text-green-400"}`}>
+                                                {message}
+                                            </div>
+                                        )}
+
+                                        <div
+                                            className={`transition-all duration-700 delay-900 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+                                                }`}
+                                        >
+                                            <Button type="submit" disabled={isLoading} className={`w-full text-white font-light tracking-wider uppercase text-sm py-6 relative overflow-hidden group transition-all duration-300 
+                        ${isError
+                                                    ? "bg-red-600 hover:bg-red-700 shadow-[0_0_30px_rgba(220,38,38,0.6)]"
+                                                    : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 hover:shadow-[0_0_30px_rgba(59,130,246,0.6)]"}
+                        `}>
+                                                <span className="relative z-10">{isLoading ? "Atualizando..." : "Atualizar Senha"}</span>
+                                                {!isError && (
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out" />
+                                                )}
+                                            </Button>
                                         </div>
-                                    )}
-
-                                    <div
-                                        className={`transition-all duration-700 delay-900 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-                                            }`}
-                                    >
-                                        <Button onClick={handleUpdate} disabled={isLoading} className={`w-full text-white font-light tracking-wider uppercase text-sm py-6 relative overflow-hidden group transition-all duration-300 
-                      ${isError
-                                                ? "bg-red-600 hover:bg-red-700 shadow-[0_0_30px_rgba(220,38,38,0.6)]"
-                                                : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 hover:shadow-[0_0_30px_rgba(59,130,246,0.6)]"}
-                    `}>
-                                            <span className="relative z-10">{isLoading ? "Atualizando..." : "Atualizar Senha"}</span>
-                                            {!isError && (
-                                                <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out" />
-                                            )}
-                                        </Button>
-                                    </div>
+                                    </form>
                                 </>
                             ) : (
                                 <div className="text-center space-y-4">
