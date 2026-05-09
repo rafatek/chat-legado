@@ -8,10 +8,10 @@ import { Badge } from "@/components/ui/badge" // new
 import { QrCode, CheckCircle2, XCircle, RefreshCw, Smartphone, Loader2, Trash2, Webhook, Copy, RefreshCcw } from "lucide-react" // updated icons
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import { initWhatsappInstance, deleteWhatsappInstance } from "@/lib/actions/whatsapp"
 
 // Env vars
 const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
-const UAZAPI_ADMIN_TOKEN = process.env.NEXT_PUBLIC_UAZAPI_ADMIN_TOKEN
 
 export default function ConexoesPage() {
   const [loading, setLoading] = useState(true)
@@ -242,26 +242,12 @@ export default function ConexoesPage() {
         const oldToken = existingConn.instance_key
         console.log(`[Cleanup] Instância antiga detectada: ${oldName}. Deletando...`)
 
-        // Tentativa 1: delete por nome com admintoken (mais confiável)
+        // Deletar via Server Action para proteger a chave mestra
         try {
-          const del1 = await fetch(`${UAZAPI_URL}/instance/${oldName}`, {
-            method: "DELETE",
-            headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
-          })
-          console.log(`[Cleanup] DELETE /instance/${oldName} → ${del1.status}`)
+          await deleteWhatsappInstance(oldName)
+          console.log(`[Cleanup] Instância antiga deletada no backend.`)
         } catch (e) {
-          console.warn("[Cleanup] Tentativa 1 falhou:", e)
-        }
-
-        // Tentativa 2: delete com admintoken no path legado
-        try {
-          const del2 = await fetch(`${UAZAPI_URL}/instance/delete/${oldName}`, {
-            method: "DELETE",
-            headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
-          })
-          console.log(`[Cleanup] DELETE /instance/delete/${oldName} → ${del2.status}`)
-        } catch (e) {
-          console.warn("[Cleanup] Tentativa 2 falhou:", e)
+          console.warn("[Cleanup] Falha ao deletar no backend:", e)
         }
 
         // Tentativa 3: delete com token da própria instância (fallback)
@@ -321,18 +307,10 @@ export default function ConexoesPage() {
         webhookByEvents: false,
       }
 
-      console.log('Enviando para:', `${UAZAPI_URL}/instance/init`)
+      console.log('Enviando para Server Action (initWhatsappInstance)')
 
-      const res = await fetch(`${UAZAPI_URL}/instance/init`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "admintoken": UAZAPI_ADMIN_TOKEN as string
-        },
-        body: JSON.stringify(payload)
-      })
-
-      const data = await res.json()
+      const res = await initWhatsappInstance(payload)
+      const data = res.data
       console.log("Create Response Base:", res.ok, res.status, data)
 
       let token = ""
@@ -525,10 +503,7 @@ export default function ConexoesPage() {
       })
       
       if (!delRes.ok) {
-        await fetch(`${UAZAPI_URL}/instance/delete/${instanceName}`, {
-          method: "DELETE",
-          headers: { "admintoken": UAZAPI_ADMIN_TOKEN as string }
-        })
+        await deleteWhatsappInstance(instanceName)
       }
 
       const { data: { user } } = await supabase.auth.getUser()

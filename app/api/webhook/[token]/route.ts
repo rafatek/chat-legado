@@ -4,7 +4,7 @@ import { formatBrazilianPhone } from '@/lib/utils/phone'
 
 // Initializing Supabase Client with Service Role Key to bypass RLS for token lookup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 if (!supabaseServiceKey) {
   console.error("FATAL: SUPABASE_SERVICE_ROLE_KEY is missing. Webhooks require this key to bypass RLS.")

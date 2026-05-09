@@ -43,7 +43,7 @@ export default async function AdminPage() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col space-y-6 p-6 md:p-8 animate-in fade-in zoom-in duration-500">
+    <div className="flex h-full w-full flex-col space-y-6 p-1 animate-in fade-in zoom-in duration-500 overflow-y-auto pb-20 custom-scrollbar">
       <div>
         <h1 className="text-3xl font-black tracking-tight uppercase text-white drop-shadow-[0_0_15px_rgba(0,163,255,0.2)]">
           Painel Administrativo

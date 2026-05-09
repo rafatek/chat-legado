@@ -187,7 +187,7 @@ export default function AutomacaoConfigPage() {
     }
 
     return (
-        <div className="space-y-6 pb-20 max-w-7xl mx-auto">
+        <div className="space-y-6 pb-20 max-w-7xl mx-auto h-full overflow-y-auto custom-scrollbar px-1">
             {/* Nav */}
             <div className="flex items-center gap-4">
                 <Button variant="ghost" size="icon" onClick={() => router.push("/automacoes")}>
