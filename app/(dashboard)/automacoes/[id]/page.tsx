@@ -277,7 +277,9 @@ export default function AutomacaoConfigPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="none" className="text-muted-foreground italic">Nenhum mapeado</SelectItem>
-                                            {webhook.available_fields ? (Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields)).map(field => (
+                                            {webhook.available_fields ? (Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields))
+                                                .filter(field => field && String(field).trim() !== "")
+                                                .map(field => (
                                                 <SelectItem key={field} value={field}>{field}</SelectItem>
                                             )) : null}
                                         </SelectContent>
@@ -294,7 +296,9 @@ export default function AutomacaoConfigPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="none" className="text-muted-foreground italic">Nenhum mapeado</SelectItem>
-                                            {webhook.available_fields ? (Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields)).map(field => (
+                                            {webhook.available_fields ? (Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields))
+                                                .filter(field => field && String(field).trim() !== "")
+                                                .map(field => (
                                                 <SelectItem key={field} value={field}>{field}</SelectItem>
                                             )) : null}
                                         </SelectContent>
@@ -339,7 +343,9 @@ export default function AutomacaoConfigPage() {
                                 <p className="text-xs text-gray-500">Nenhuma variável capturada ainda. Dispare um JSON em <strong className="text-purple-400">Modo Teste</strong> para preencher esta lista.</p>
                             ) : (
                                 <div className="flex flex-col gap-2 max-h-[350px] overflow-y-auto custom-scrollbar p-1 pb-4 pr-3">
-                                    {(Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields)).map((field) => {
+                                    {(Array.isArray(webhook.available_fields) ? webhook.available_fields : Object.keys(webhook.available_fields))
+                                        .filter(field => field && String(field).trim() !== "")
+                                        .map((field) => {
                                         const sampleValue = !Array.isArray(webhook.available_fields) && webhook.available_fields[field] 
                                                             ? String(webhook.available_fields[field]) 
                                                             : null;

@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
-  ChevronRight, DollarSign, FileText, User
+  ChevronRight, DollarSign, FileText, User, Trash2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -193,6 +193,7 @@ export default function AtendimentoPage() {
   } | null>(null)
   const [isSavingLead, setIsSavingLead] = useState(false)
   const [isLoadingLead, setIsLoadingLead] = useState(false)
+  const [isDeletingContact, setIsDeletingContact] = useState(false)
 
   // ---- Load User ----
   useEffect(() => {
@@ -444,6 +445,49 @@ export default function AtendimentoPage() {
       setSelectedConv(prev => prev ? { ...prev, contact_name: leadDetails.full_name } : prev)
     }
     setIsSavingLead(false)
+  }
+
+  const handleDeleteContact = async () => {
+    if (!selectedConv) return
+    const confirmDelete = window.confirm("Tem certeza que deseja apagar este contato? Todas as mensagens e dados do lead serão perdidos permanentemente.")
+    if (!confirmDelete) return
+
+    setIsDeletingContact(true)
+    const convId = selectedConv.id
+    try {
+      // Chama a API server-side que usa service role (bypassa RLS)
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const res = await fetch('/api/contacts/delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ conversation_id: convId }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || "Erro ao apagar o contato.")
+        return
+      }
+
+      toast.success("Contato e histórico apagados com sucesso!")
+
+      // Atualizar UI
+      setConversations(prev => prev.filter(c => c.id !== convId))
+      setFilteredConvs(prev => prev.filter(c => c.id !== convId))
+      setSelectedConv(null)
+      setIsContactSidebarOpen(false)
+      setIsMobileView(false)
+    } catch (err: any) {
+      console.error("Erro ao apagar contato:", err)
+      toast.error("Erro ao apagar o contato.")
+    } finally {
+      setIsDeletingContact(false)
+    }
   }
 
 
@@ -1330,14 +1374,24 @@ export default function AtendimentoPage() {
 
             {/* Save Button */}
             {leadDetails && (
-              <div className="p-4 border-t border-white/5">
+              <div className="p-4 border-t border-white/5 space-y-2">
                 <Button
                   onClick={handleUpdateLead}
-                  disabled={isSavingLead}
+                  disabled={isSavingLead || isDeletingContact}
                   className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-8 text-sm gap-2"
                 >
                   {isSavingLead ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                   {isSavingLead ? "Salvando..." : "Salvar Dados"}
+                </Button>
+                
+                <Button
+                  onClick={handleDeleteContact}
+                  disabled={isDeletingContact || isSavingLead}
+                  variant="destructive"
+                  className="w-full h-8 text-sm gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-colors"
+                >
+                  {isDeletingContact ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  {isDeletingContact ? "Apagando..." : "Apagar Contato"}
                 </Button>
               </div>
             )}

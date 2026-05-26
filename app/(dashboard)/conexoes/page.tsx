@@ -412,8 +412,14 @@ export default function ConexoesPage() {
         })
 
         if (res.status === 404 || res.status === 410 || res.status === 400 || res.status === 401) {
-          console.log("Instância não encontrada ou inválida. Limpando...")
-          await handleLocalDisconnect()
+          console.log(`Erro da API na checagem de status (${res.status}). Marcando como desconectado temporariamente...`)
+          if (isConnected) {
+            setIsConnected(false)
+            setConnectionStatus("disconnected")
+            setPhoneNumber(null)
+            await updateSupabaseStatus(instanceName, "disconnected")
+            toast.warning("Instabilidade na conexão detectada. Tentando recuperar...")
+          }
           return
         }
 

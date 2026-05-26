@@ -36,15 +36,6 @@ interface KanbanBoardProps {
     availableLabels?: KanbanLabel[]
 }
 
-const ORIGINS = [
-    "WhatsApp",
-    "Instagram",
-    "Google Maps",
-    "Extração CNPJ",
-    "Outros"
-]
-
-
 
 export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoardProps) {
     const router = useRouter()
@@ -69,9 +60,9 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
     const [isCreatingLead, setIsCreatingLead] = useState(false)
     const [newLeadData, setNewLeadData] = useState({
         full_name: "",
-        whatsapp: "",
-        origin: ""
+        whatsapp: ""
     })
+    const [selectedNewLeadLabelIds, setSelectedNewLeadLabelIds] = useState<string[]>([])
 
 
 
@@ -305,8 +296,8 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
     }
 
     const handleCreateLead = async () => {
-        if (!newLeadData.full_name || !newLeadData.whatsapp || !newLeadData.origin) {
-            toast.warning("Preencha todos os campos obrigatórios")
+        if (!newLeadData.full_name || !newLeadData.whatsapp) {
+            toast.warning("Preencha nome e WhatsApp")
             return
         }
 
@@ -329,8 +320,8 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                 user_id: session.user.id,
                 column_id: targetColumn.id,
                 full_name: newLeadData.full_name,
-                whatsapp: newLeadData.whatsapp.replace(/\D/g, ""), // Store clean number
-                origin: newLeadData.origin,
+                whatsapp: newLeadData.whatsapp.replace(/\D/g, ""),
+                origin: "WhatsApp",
                 message_sent: false
             }
 
@@ -342,16 +333,25 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
 
             if (error) throw error
 
+            // Inserir etiquetas selecionadas
+            if (data && selectedNewLeadLabelIds.length > 0) {
+                const labelInserts = selectedNewLeadLabelIds.map(labelId => ({
+                    lead_id: data.id,
+                    label_id: labelId
+                }))
+                await supabase.from('lead_labels').insert(labelInserts)
+            }
+
             if (data) {
-                // Optimistic Update
+                const selectedLabels = availableLabels.filter(l => selectedNewLeadLabelIds.includes(l.id))
                 const newLead = {
                     id: data.id,
                     full_name: data.full_name,
                     whatsapp: data.whatsapp,
-                    origin: data.origin, // This will be the mapped value from DB (e.g. 'instagram')
+                    origin: data.origin,
                     column_id: data.column_id,
                     message_sent: data.message_sent,
-                    labels: []
+                    labels: selectedLabels
                 }
 
                 const newColumns = columns.map(col => {
@@ -364,7 +364,8 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                 setColumns(newColumns)
                 toast.success("Lead criado com sucesso!")
                 setIsNewLeadOpen(false)
-                setNewLeadData({ full_name: "", whatsapp: "", origin: "" })
+                setNewLeadData({ full_name: "", whatsapp: "" })
+                setSelectedNewLeadLabelIds([])
             }
 
         } catch (error: any) {
@@ -475,22 +476,40 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                                     />
                                 </div>
                                 <div className="grid gap-2">
-                                    <Label htmlFor="lead-origin">Origem</Label>
-                                    <Select
-                                        value={newLeadData.origin}
-                                        onValueChange={(val) => setNewLeadData({ ...newLeadData, origin: val })}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Selecione a origem" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {ORIGINS.map((origin) => (
-                                                <SelectItem key={origin} value={origin}>
-                                                    {origin}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                    <Label>Etiquetas</Label>
+                                    {availableLabels.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-black/20 border border-white/5 max-h-36 overflow-y-auto custom-scrollbar">
+                                            {availableLabels.map((label) => {
+                                                const isSelected = selectedNewLeadLabelIds.includes(label.id)
+                                                return (
+                                                    <button
+                                                        key={label.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (isSelected) {
+                                                                setSelectedNewLeadLabelIds(prev => prev.filter(id => id !== label.id))
+                                                            } else {
+                                                                setSelectedNewLeadLabelIds(prev => [...prev, label.id])
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            borderColor: label.color,
+                                                            backgroundColor: isSelected ? `${label.color}20` : 'transparent',
+                                                            color: isSelected ? '#FFF' : label.color
+                                                        }}
+                                                        className={`
+                                                            px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-white/5
+                                                            ${isSelected ? "border-solid font-extrabold" : "border-dashed opacity-60"}
+                                                        `}
+                                                    >
+                                                        {label.title}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <DialogFooter>

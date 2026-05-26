@@ -5,7 +5,7 @@ import { Draggable } from "@hello-pangea/dnd"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Lead, Label as KanbanLabel } from "@/types/kanban"
-import { MessageSquare, MapPin, Instagram, FileText, CheckCircle2, Pencil, Loader2 } from "lucide-react"
+import { MessageSquare, MapPin, Instagram, FileText, CheckCircle2, Pencil, Loader2, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
     Dialog,
@@ -59,6 +59,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
     // Edit state
     const [isEditOpen, setIsEditOpen] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
     const [editData, setEditData] = useState({
         full_name: lead.full_name,
         valor: lead.valor !== undefined && lead.valor !== null ? lead.valor.toString() : (lead.value ? (lead.value / 100).toString() : "")
@@ -138,6 +139,55 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
             toast.error("Erro ao atualizar o lead.")
         } finally {
             setIsSaving(false)
+        }
+    }
+
+    const handleDeleteLead = async () => {
+        const confirmDelete = window.confirm(
+            "Tem certeza que deseja apagar este contato? Todas as mensagens e dados do lead serão perdidos permanentemente."
+        )
+        if (!confirmDelete) return
+
+        setIsDeleting(true)
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+
+            // Busca o conversation_id vinculado ao lead
+            const { data: leadData } = await supabase
+                .from('leads')
+                .select('conversation_id')
+                .eq('id', lead.id)
+                .single()
+
+            if (leadData?.conversation_id) {
+                // Deleta via API server-side (bypassa RLS)
+                const res = await fetch('/api/contacts/delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token || ''}`,
+                    },
+                    body: JSON.stringify({ conversation_id: leadData.conversation_id }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    toast.error(data.error || 'Erro ao apagar o contato.')
+                    return
+                }
+            } else {
+                // Lead sem conversa — apaga diretamente
+                const { error } = await supabase.from('leads').delete().eq('id', lead.id)
+                if (error) throw error
+            }
+
+            toast.success('Contato apagado com sucesso!')
+            setIsEditOpen(false)
+            router.refresh()
+        } catch (err: any) {
+            console.error('Erro ao apagar lead:', err)
+            toast.error('Erro ao apagar o contato.')
+        } finally {
+            setIsDeleting(false)
         }
     }
 
@@ -294,13 +344,24 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                             )}
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSaving}>
-                            Cancelar
+                    <DialogFooter className="flex-row items-center gap-2 sm:justify-between">
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteLead}
+                            disabled={isDeleting || isSaving}
+                            className="mr-auto"
+                        >
+                            {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                            Excluir
                         </Button>
-                        <Button onClick={handleSave} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Salvar Alterações"}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSaving || isDeleting}>
+                                Cancelar
+                            </Button>
+                            <Button onClick={handleSave} disabled={isSaving || isDeleting}>
+                                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Salvar Alterações"}
+                            </Button>
+                        </div>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
