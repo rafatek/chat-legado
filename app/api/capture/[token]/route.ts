@@ -206,6 +206,7 @@ export async function POST(
     let uazData: any = null
 
     const endpoints = [
+        { path: '/send/text',        body: { number: uazPhone, text: finalMessage } },
         { path: `/message/sendText/${connection.instance_name}`, body: { number: uazPhone, text: finalMessage } },
         { path: `/message/sendText/${connection.instance_name}`, body: { number: uazPhone, textMessage: { text: finalMessage } } },
         { path: `/message/text/${connection.instance_name}`,     body: { number: uazPhone, text: finalMessage } },
@@ -213,7 +214,6 @@ export async function POST(
         // fallbacks legados (sem nome de instância)
         { path: '/message/sendText', body: { number: uazPhone, text: finalMessage } },
         { path: '/message/text',     body: { number: uazPhone, text: finalMessage } },
-        { path: '/send/text',        body: { number: uazPhone, text: finalMessage } },
     ]
 
     for (const ep of endpoints) {

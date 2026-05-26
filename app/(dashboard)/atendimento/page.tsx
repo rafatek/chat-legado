@@ -560,10 +560,6 @@ export default function AtendimentoPage() {
       toast.warning("Digite um número de WhatsApp válido")
       return
     }
-    if (!firstMsg) {
-      toast.warning("Digite uma mensagem para enviar")
-      return
-    }
 
     // Remove o prefixo 55 (DDI Brasil) para salvar no padrão do sistema
     // O webhook e n8n salvam sem o 55, então mantemos consistência
@@ -582,7 +578,7 @@ export default function AtendimentoPage() {
           user_id: userId,
           contact_phone: phone,
           contact_name: newConvName.trim() || phone,
-          last_message: firstMsg,
+          last_message: firstMsg || "[Contato Criado]",
           last_message_at: new Date().toISOString(),
           unread_count: 0,
           is_open: true,
@@ -623,7 +619,7 @@ export default function AtendimentoPage() {
             whatsapp: phone,
             origin: "WhatsApp",
             column_id: firstCol?.id || null,
-            last_message: firstMsg,
+            last_message: firstMsg || "[Contato Criado]",
             last_message_at: new Date().toISOString(),
             conversation_id: conv.id,
           })
@@ -633,7 +629,7 @@ export default function AtendimentoPage() {
         } else {
           // Lead já existe — apenas atualiza last_message e vincula conversa
           await supabase.from("leads").update({
-            last_message: firstMsg,
+            last_message: firstMsg || "[Contato Criado]",
             last_message_at: new Date().toISOString(),
             conversation_id: conv.id,
           }).eq("id", existingLead.id)
@@ -643,22 +639,26 @@ export default function AtendimentoPage() {
         // Não bloqueia o fluxo — a conversa já foi criada
       }
 
-      // 2. Envia a primeira mensagem via UazAPI
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch("/api/inbox/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token || ''}`,
-        },
-        body: JSON.stringify({ conversation_id: conv.id, contact_phone: phone, content: firstMsg }),
-      })
-      const data = await res.json()
+      if (firstMsg) {
+        // 2. Envia a primeira mensagem via UazAPI
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch("/api/inbox/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token || ''}`,
+          },
+          body: JSON.stringify({ conversation_id: conv.id, contact_phone: phone, content: firstMsg }),
+        })
+        const data = await res.json()
 
-      if (!res.ok) {
-        toast.error(data.error || "Conversa criada, mas falha ao enviar a mensagem")
+        if (!res.ok) {
+          toast.error(data.error || "Conversa criada, mas falha ao enviar a mensagem")
+        } else {
+          toast.success("Conversa iniciada e mensagem enviada!")
+        }
       } else {
-        toast.success("Conversa iniciada e mensagem enviada!")
+        toast.success("Contato criado com sucesso!")
       }
 
       // 3. Abre a conversa
@@ -1378,12 +1378,12 @@ export default function AtendimentoPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="nc-msg">Primeira Mensagem <span className="text-red-400">*</span></Label>
+              <Label htmlFor="nc-msg">Primeira Mensagem <span className="text-gray-500 text-xs">(opcional)</span></Label>
               <textarea
                 id="nc-msg"
                 value={newConvMsg}
                 onChange={(e) => setNewConvMsg(e.target.value)}
-                placeholder="Olá! Preciso de ajuda com..."
+                placeholder="Ex: Olá! Preciso de ajuda com... (Se deixar em branco, o contato será criado sem enviar mensagem)"
                 rows={3}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-gray-100 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#00A3FF]/50 resize-none"
               />
@@ -1395,8 +1395,16 @@ export default function AtendimentoPage() {
               Cancelar
             </Button>
             <Button onClick={handleCreateConversation} disabled={isCreatingConv} className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 gap-2">
-              {isCreatingConv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {isCreatingConv ? "Enviando..." : "Iniciar Conversa"}
+              {isCreatingConv ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                newConvMsg.trim() ? <Send className="h-4 w-4" /> : <Plus className="h-4 w-4" />
+              )}
+              {isCreatingConv ? (
+                newConvMsg.trim() ? "Enviando..." : "Criando..."
+              ) : (
+                newConvMsg.trim() ? "Iniciar Conversa" : "Criar Contato"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

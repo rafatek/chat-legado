@@ -138,7 +138,7 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
                         style={{ minHeight: '150px', flexGrow: 1, maxHeight: 'calc(100vh - 200px)' }}
                     >
                         {column.leads.map((lead, index) => (
-                            <KanbanCard key={lead.id} lead={lead} index={index} />
+                            <KanbanCard key={lead.id} lead={lead} index={index} availableLabels={availableLabels} />
                         ))}
                         {provided.placeholder}
                     </div>

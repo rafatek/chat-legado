@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Draggable } from "@hello-pangea/dnd"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Lead } from "@/types/kanban"
+import { Lead, Label as KanbanLabel } from "@/types/kanban"
 import { MessageSquare, MapPin, Instagram, FileText, CheckCircle2, Pencil, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
@@ -23,6 +23,7 @@ import { toast } from "sonner"
 interface KanbanCardProps {
     lead: Lead
     index: number
+    availableLabels?: KanbanLabel[]
 }
 
 function OriginBadge({ origin }: { origin: string }) {
@@ -52,7 +53,7 @@ function OriginBadge({ origin }: { origin: string }) {
     )
 }
 
-export function KanbanCard({ lead, index }: KanbanCardProps) {
+export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProps) {
     const router = useRouter()
     
     // Edit state
@@ -62,6 +63,17 @@ export function KanbanCard({ lead, index }: KanbanCardProps) {
         full_name: lead.full_name,
         valor: lead.valor !== undefined && lead.valor !== null ? lead.valor.toString() : (lead.value ? (lead.value / 100).toString() : "")
     })
+    const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([])
+
+    useEffect(() => {
+        if (isEditOpen) {
+            setEditData({
+                full_name: lead.full_name,
+                valor: lead.valor !== undefined && lead.valor !== null ? lead.valor.toString() : (lead.value ? (lead.value / 100).toString() : "")
+            })
+            setSelectedLabelIds(lead.labels?.map(l => l.id) || [])
+        }
+    }, [isEditOpen, lead])
 
     const handleWhatsAppClick = (e: React.MouseEvent) => {
         e.stopPropagation()
@@ -83,7 +95,8 @@ export function KanbanCard({ lead, index }: KanbanCardProps) {
         try {
             const numericValue = editData.valor ? parseFloat(editData.valor.replace(',', '.')) : null
 
-            const { error } = await supabase
+            // 1. Atualiza dados principais
+            const { error: updateError } = await supabase
                 .from('leads')
                 .update({ 
                     full_name: editData.full_name,
@@ -91,7 +104,31 @@ export function KanbanCard({ lead, index }: KanbanCardProps) {
                 })
                 .eq('id', lead.id)
 
-            if (error) throw error
+            if (updateError) throw updateError
+
+            // 2. Atualiza etiquetas vinculadas (lead_labels)
+            const currentLabelIds = lead.labels?.map(l => l.id) || []
+            
+            const labelsToAdd = selectedLabelIds.filter(id => !currentLabelIds.includes(id))
+            const labelsToRemove = currentLabelIds.filter(id => !selectedLabelIds.includes(id))
+
+            if (labelsToAdd.length > 0) {
+                const inserts = labelsToAdd.map(labelId => ({
+                    lead_id: lead.id,
+                    label_id: labelId
+                }))
+                const { error: insertError } = await supabase.from('lead_labels').insert(inserts)
+                if (insertError) throw insertError
+            }
+
+            if (labelsToRemove.length > 0) {
+                const { error: deleteError } = await supabase
+                    .from('lead_labels')
+                    .delete()
+                    .eq('lead_id', lead.id)
+                    .in('label_id', labelsToRemove)
+                if (deleteError) throw deleteError
+            }
 
             toast.success("Lead atualizado com sucesso!")
             setIsEditOpen(false)
@@ -219,6 +256,42 @@ export function KanbanCard({ lead, index }: KanbanCardProps) {
                                 value={editData.valor}
                                 onChange={(e) => setEditData({ ...editData, valor: e.target.value })}
                             />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Etiquetas</Label>
+                            {availableLabels.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-black/20 border border-white/5 max-h-36 overflow-y-auto custom-scrollbar">
+                                    {availableLabels.map((label) => {
+                                        const isSelected = selectedLabelIds.includes(label.id)
+                                        return (
+                                            <button
+                                                key={label.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (isSelected) {
+                                                        setSelectedLabelIds(prev => prev.filter(id => id !== label.id))
+                                                    } else {
+                                                        setSelectedLabelIds(prev => [...prev, label.id])
+                                                    }
+                                                }}
+                                                style={{ 
+                                                    borderColor: label.color, 
+                                                    backgroundColor: isSelected ? `${label.color}20` : 'transparent',
+                                                    color: isSelected ? '#FFF' : label.color 
+                                                }}
+                                                className={`
+                                                    px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-white/5
+                                                    ${isSelected ? "border-solid font-extrabold" : "border-dashed opacity-60"}
+                                                `}
+                                            >
+                                                {label.title}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <DialogFooter>

@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
         ]
     } else {
         endpoints = [
+            { path: '/send/text',        body: { number: phone, text: content } },
             { path: `/message/sendText/${connection.instance_name}`, body: { number: phone, text: content } },
             { path: `/message/sendText/${connection.instance_name}`, body: { number: phone, textMessage: { text: content } } },
             { path: `/message/text/${connection.instance_name}`,     body: { number: phone, text: content } },
@@ -75,7 +76,6 @@ export async function POST(req: NextRequest) {
             // fallbacks legados (sem nome de instância)
             { path: '/message/sendText', body: { number: phone, text: content } },
             { path: '/message/text',     body: { number: phone, text: content } },
-            { path: '/send/text',        body: { number: phone, text: content } },
         ]
     }
 
