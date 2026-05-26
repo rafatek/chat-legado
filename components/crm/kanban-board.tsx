@@ -5,13 +5,14 @@ import { DragDropContext, DropResult, Droppable, Draggable } from "@hello-pangea
 import { KanbanColumn } from "./kanban-column"
 import { Column, Label as KanbanLabel } from "@/types/kanban"
 import { Button } from "@/components/ui/button"
-import { Plus, Loader2, UserPlus } from "lucide-react"
+import { Plus, Loader2, UserPlus, FileText } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { LabelManager } from "./label-manager"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
     Select,
@@ -63,6 +64,11 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
         whatsapp: ""
     })
     const [selectedNewLeadLabelIds, setSelectedNewLeadLabelIds] = useState<string[]>([])
+
+    // Spreadsheet Import State
+    const [isImportOpen, setIsImportOpen] = useState(false)
+    const [pasteData, setPasteData] = useState("")
+    const [isImporting, setIsImporting] = useState(false)
 
 
 
@@ -376,6 +382,97 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
         }
     }
 
+    const handleImportLeads = async () => {
+        if (!pasteData.trim()) {
+            toast.warning("Cole os dados da planilha antes de importar")
+            return
+        }
+
+        setIsImporting(true)
+
+        try {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+            if (sessionError || !session?.user) throw new Error("Sessão inválida")
+
+            // Localização da Coluna: Position 0
+            const targetColumn = columns.find(c => c.position === 0)
+            if (!targetColumn) {
+                toast.error("Coluna 'Novos Leads' não encontrada (position 0).")
+                setIsImporting(false)
+                return
+            }
+
+            const lines = pasteData.split("\n").map(l => l.trim()).filter(Boolean)
+            const parsedLeads: { full_name: string; whatsapp: string }[] = []
+
+            for (const line of lines) {
+                const parts = line.split(/\t|;|,,*/)
+                let name = parts[0]?.trim() || "Lead Importado"
+                let rawPhone = parts[1]?.trim() || ""
+
+                if (!rawPhone && parts[0]) {
+                    const digitsOnly = parts[0].replace(/\D/g, "")
+                    if (digitsOnly.length >= 8) {
+                        rawPhone = parts[0]
+                        name = "Lead Importado"
+                    }
+                }
+
+                if (rawPhone) {
+                    let cleanPhone = rawPhone.replace(/\D/g, "")
+                    
+                    if (cleanPhone.startsWith("55") && cleanPhone.length >= 12) {
+                        cleanPhone = cleanPhone.slice(2)
+                    }
+
+                    if (cleanPhone.startsWith("0")) {
+                        cleanPhone = cleanPhone.slice(1)
+                    }
+
+                    if (cleanPhone.length >= 8) {
+                        parsedLeads.push({
+                            full_name: name,
+                            whatsapp: cleanPhone
+                        })
+                    }
+                }
+            }
+
+            if (parsedLeads.length === 0) {
+                toast.warning("Nenhum contato com número de WhatsApp válido foi identificado.")
+                setIsImporting(false)
+                return
+            }
+
+            const payloads = parsedLeads.map(lead => ({
+                user_id: session.user.id,
+                column_id: targetColumn.id,
+                full_name: lead.full_name,
+                whatsapp: lead.whatsapp,
+                origin: "Outros",
+                message_sent: false
+            }))
+
+            const { data, error } = await supabase
+                .from('leads')
+                .insert(payloads)
+                .select()
+
+            if (error) throw error
+
+            toast.success(`${data ? data.length : parsedLeads.length} leads importados com sucesso!`)
+            setIsImportOpen(false)
+            setPasteData("")
+            router.refresh()
+
+        } catch (error: any) {
+            console.error("Erro ao importar planilha:", error)
+            toast.error("Erro ao importar contatos. Verifique o console.")
+        } finally {
+            setIsImporting(false)
+        }
+    }
+
     return (
         <div className="flex flex-col h-full gap-4">
             {/* Header / Toolbar */}
@@ -515,6 +612,57 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                             <DialogFooter>
                                 <Button onClick={handleCreateLead} disabled={isCreatingLead}>
                                     {isCreatingLead ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Adicionar Lead"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Importar Planilha Button */}
+                    <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+                        <DialogTrigger asChild>
+                            <Button
+                                variant="outline"
+                                className="bg-[#111114] border-white/10 hover:bg-white/5 text-gray-300 hover:text-white"
+                            >
+                                <FileText className="mr-2 h-4 w-4" /> Importar Planilha
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[500px]">
+                            <DialogHeader>
+                                <DialogTitle>Importar Contatos de Planilha</DialogTitle>
+                                <DialogDescription>
+                                    Copie as colunas de sua planilha Excel ou Google Sheets (Coluna 1: Nome, Coluna 2: Número de WhatsApp) e cole abaixo.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="paste-data">Dados da Planilha</Label>
+                                    <Textarea
+                                        id="paste-data"
+                                        placeholder="Exemplo de conteúdo colado:&#10;João da Silva	(11) 99999-9999&#10;Maria Santos	11988887777"
+                                        value={pasteData}
+                                        onChange={(e) => setPasteData(e.target.value)}
+                                        rows={10}
+                                        className="font-mono text-sm bg-black/40 border-white/10"
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                        Os números serão formatados automaticamente (remoção de parênteses, traços, DDD zero inicial, e o DDI 55 se houver). Os contatos serão criados na coluna de &quot;Novos Leads&quot;.
+                                    </span>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setIsImportOpen(false)
+                                        setPasteData("")
+                                    }}
+                                    disabled={isImporting}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button onClick={handleImportLeads} disabled={isImporting}>
+                                    {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Importar Contatos"}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>

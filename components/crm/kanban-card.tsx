@@ -15,6 +15,16 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { supabase } from "@/lib/supabase"
@@ -65,6 +75,8 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
         valor: lead.valor !== undefined && lead.valor !== null ? lead.valor.toString() : (lead.value ? (lead.value / 100).toString() : "")
     })
     const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([])
+    const [isDeletingLead, setIsDeletingLead] = useState(false)
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
 
     useEffect(() => {
         if (isEditOpen) {
@@ -143,12 +155,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
     }
 
     const handleDeleteLead = async () => {
-        const confirmDelete = window.confirm(
-            "Tem certeza que deseja apagar este contato? Todas as mensagens e dados do lead serão perdidos permanentemente."
-        )
-        if (!confirmDelete) return
-
-        setIsDeleting(true)
+        setIsDeletingLead(true)
         try {
             const { data: { session } } = await supabase.auth.getSession()
 
@@ -160,7 +167,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                 .single()
 
             if (leadData?.conversation_id) {
-                // Deleta via API server-side (bypassa RLS)
+                // Deleta via API server-side (bypassa RLS) - Lógica do usuário
                 const res = await fetch('/api/contacts/delete', {
                     method: 'DELETE',
                     headers: {
@@ -172,22 +179,25 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                 const data = await res.json()
                 if (!res.ok) {
                     toast.error(data.error || 'Erro ao apagar o contato.')
+                    setIsDeletingLead(false)
                     return
                 }
             } else {
-                // Lead sem conversa — apaga diretamente
+                // Lead sem conversa — apaga as labels e o lead diretamente (Mesclado)
+                await supabase.from('lead_labels').delete().eq('lead_id', lead.id)
                 const { error } = await supabase.from('leads').delete().eq('id', lead.id)
                 if (error) throw error
             }
 
             toast.success('Contato apagado com sucesso!')
             setIsEditOpen(false)
+            setIsDeleteConfirmOpen(false)
             router.refresh()
         } catch (err: any) {
             console.error('Erro ao apagar lead:', err)
-            toast.error('Erro ao apagar o contato.')
+            toast.error(`Falha ao excluir lead: ${err.message || err}`)
         } finally {
-            setIsDeleting(false)
+            setIsDeletingLead(false)
         }
     }
 
@@ -344,27 +354,58 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                             )}
                         </div>
                     </div>
-                    <DialogFooter className="flex-row items-center gap-2 sm:justify-between">
+                    <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
                         <Button
                             variant="destructive"
-                            onClick={handleDeleteLead}
-                            disabled={isDeleting || isSaving}
-                            className="mr-auto"
+                            onClick={() => setIsDeleteConfirmOpen(true)}
+                            disabled={isSaving || isDeletingLead}
+                            className="bg-red-600/10 hover:bg-red-600/20 text-red-400 hover:text-red-300 border border-red-500/20 h-9"
                         >
-                            {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                            Excluir
+                            Excluir Lead
                         </Button>
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSaving || isDeleting}>
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSaving || isDeletingLead}>
                                 Cancelar
                             </Button>
-                            <Button onClick={handleSave} disabled={isSaving || isDeleting}>
+                            <Button onClick={handleSave} disabled={isSaving || isDeletingLead}>
                                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Salvar Alterações"}
                             </Button>
                         </div>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* ALERT DIALOG: Confirmação de Exclusão de Lead */}
+            <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+                <AlertDialogContent className="bg-[#1A1A23] border-white/10 text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-white">Excluir Lead Permanentemente?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-gray-400">
+                            Esta ação é <strong className="text-red-400">irreversível</strong>. Ela excluirá este lead do CRM/Kanban e todas as suas etiquetas vinculadas.
+                            <br /><br />
+                            A conversa e o histórico de mensagens no chat de atendimento <strong className="text-white">não</strong> serão excluídos.
+                            <br /><br />
+                            Deseja realmente continuar?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300">
+                            Cancelar
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => {
+                                e.preventDefault()
+                                handleDeleteLead()
+                            }}
+                            className="bg-red-600 hover:bg-red-700 text-white border-none"
+                            disabled={isDeletingLead}
+                        >
+                            {isDeletingLead ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Confirmar Exclusão
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

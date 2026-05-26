@@ -24,6 +24,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // =============================================
 // Types
@@ -244,6 +254,8 @@ export default function AtendimentoPage() {
   const [isSavingLead, setIsSavingLead] = useState(false)
   const [isLoadingLead, setIsLoadingLead] = useState(false)
   const [isDeletingContact, setIsDeletingContact] = useState(false)
+  const [isDeletingContact, setIsDeletingContact] = useState(false)
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
 
   // ---- Load User ----
   useEffect(() => {
@@ -499,13 +511,10 @@ export default function AtendimentoPage() {
 
   const handleDeleteContact = async () => {
     if (!selectedConv) return
-    const confirmDelete = window.confirm("Tem certeza que deseja apagar este contato? Todas as mensagens e dados do lead serão perdidos permanentemente.")
-    if (!confirmDelete) return
-
     setIsDeletingContact(true)
     const convId = selectedConv.id
     try {
-      // Chama a API server-side que usa service role (bypassa RLS)
+      // Chama a API server-side que usa service role (bypassa RLS) - Lógica do usuário
       const { data: { session } } = await supabase.auth.getSession()
 
       const res = await fetch('/api/contacts/delete', {
@@ -531,10 +540,11 @@ export default function AtendimentoPage() {
       setFilteredConvs(prev => prev.filter(c => c.id !== convId))
       setSelectedConv(null)
       setIsContactSidebarOpen(false)
+      setIsDeleteConfirmOpen(false)
       setIsMobileView(false)
     } catch (err: any) {
       console.error("Erro ao apagar contato:", err)
-      toast.error("Erro ao apagar o contato.")
+      toast.error(`Falha ao excluir contato: ${err.message || err}`)
     } finally {
       setIsDeletingContact(false)
     }
@@ -1606,9 +1616,9 @@ export default function AtendimentoPage() {
               )}
             </div>
 
-            {/* Save Button */}
-            {leadDetails && (
-              <div className="p-4 border-t border-white/5 space-y-2">
+            {/* Action Buttons (Save & Delete) */}
+            <div className="p-4 border-t border-white/5 space-y-2">
+              {leadDetails && (
                 <Button
                   onClick={handleUpdateLead}
                   disabled={isSavingLead || isDeletingContact}
@@ -1617,18 +1627,18 @@ export default function AtendimentoPage() {
                   {isSavingLead ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                   {isSavingLead ? "Salvando..." : "Salvar Dados"}
                 </Button>
-                
-                <Button
-                  onClick={handleDeleteContact}
-                  disabled={isDeletingContact || isSavingLead}
-                  variant="destructive"
-                  className="w-full h-8 text-sm gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-colors"
-                >
-                  {isDeletingContact ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  {isDeletingContact ? "Apagando..." : "Apagar Contato"}
-                </Button>
-              </div>
-            )}
+              )}
+              
+              <Button
+                variant="destructive"
+                onClick={() => setIsDeleteConfirmOpen(true)}
+                disabled={isDeletingContact || isSavingLead}
+                className="w-full h-8 text-sm gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 border border-red-500/20 transition-colors"
+              >
+                {isDeletingContact ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {isDeletingContact ? "Apagando..." : "Apagar Contato"}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1729,6 +1739,46 @@ export default function AtendimentoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== ALERT DIALOG: Confirmação de Exclusão de Contato ===== */}
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent className="bg-[#1A1A23] border-white/10 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Excluir Contato Permanentemente?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400">
+              Esta ação é <strong className="text-red-400">irreversível</strong>. Ela excluirá:
+              <br />
+              • Todas as mensagens deste chat
+              <br />
+              • A conversa ativa do atendimento
+              {selectedConv?.lead_id && (
+                <>
+                  <br />
+                  • O lead correspondente no CRM (Kanban)
+                </>
+              )}
+              <br /><br />
+              Deseja realmente continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteContact()
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white border-none"
+              disabled={isDeletingContact}
+            >
+              {isDeletingContact ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Confirmar Exclusão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

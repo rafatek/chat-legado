@@ -19,8 +19,9 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { Folder, ChevronLeft, ChevronRight, Loader2, Tag } from "lucide-react"
-import { getLeadsForSelector } from "@/lib/actions/campaigns"
+import { Folder, ChevronLeft, ChevronRight, Loader2, Tag, CheckSquare } from "lucide-react"
+import { getLeadsForSelector, getAllLeadIdsForSelector } from "@/lib/actions/campaigns"
+import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
@@ -149,6 +150,24 @@ export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, ini
         if (checked) newSelected.add(id)
         else newSelected.delete(id)
         setSelectedIds(newSelected)
+    }
+
+    const handleSelectAllFiltered = async () => {
+        setLoading(true)
+        try {
+            const allIds = await getAllLeadIdsForSelector(currentFolder, currentLabelId || undefined)
+            const newSelected = new Set(selectedIds)
+            allIds.forEach(id => {
+                newSelected.add(id)
+            })
+            setSelectedIds(newSelected)
+            toast.success(`${allIds.length} leads selecionados com sucesso!`)
+        } catch (error) {
+            console.error(error)
+            toast.error("Erro ao selecionar todos os leads.")
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleConfirm = () => {
@@ -322,6 +341,18 @@ export function LeadSelector({ open, onOpenChange, onConfirm, initialFolder, ini
                             <span className="text-white font-bold">{selectedIds.size}</span> selecionados
                         </div>
                         <div className="flex gap-2">
+                            {totalLeads > 0 && (
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={handleSelectAllFiltered} 
+                                    className="text-blue-400 border-blue-500/20 hover:bg-blue-500/10 gap-1.5"
+                                    disabled={loading}
+                                >
+                                    <CheckSquare className="h-4 w-4" />
+                                    Selecionar Todos ({totalLeads})
+                                </Button>
+                            )}
                             <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Limpar</Button>
                             <Button size="sm" onClick={handleConfirm} className="bg-blue-600 hover:bg-blue-700 text-white">
                                 Usar Selecionados

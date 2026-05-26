@@ -217,6 +217,40 @@ export async function getLeadsForSelector(page: number = 1, pageSize: number = 2
     return { leads: leads || [], total: count || 0 }
 }
 
+export async function getAllLeadIdsForSelector(folder: string = "Todas", labelId?: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+
+    let selectQuery = labelId ? 'id, lead_labels!inner(label_id)' : 'id'
+    
+    let query = supabase
+        .from('leads')
+        .select(`${selectQuery}`)
+        .eq('user_id', user.id)
+
+    if (folder !== "Todas") {
+        if (folder === "Sem pasta") {
+            query = query.is('folder', null)
+        } else {
+            query = query.eq('folder', folder)
+        }
+    }
+
+    if (labelId) {
+        query = query.eq('lead_labels.label_id', labelId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+        console.error("Error fetching all lead IDs for selector:", error)
+        return []
+    }
+
+    return (data || []).map((l: any) => l.id)
+}
+
 export async function deleteCampaign(campaignId: string) {
     const supabase = await createClient()
     try {
