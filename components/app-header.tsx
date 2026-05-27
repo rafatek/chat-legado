@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { PlayCircle, X } from "lucide-react"
+import { PlayCircle, X, Menu } from "lucide-react"
 import { usePathname } from "next/navigation"
 import {
   Dialog,
@@ -32,7 +32,11 @@ const getVideoId = (url: string) => {
   return match && match[2].length === 11 ? match[2] : null
 }
 
-export function AppHeader() {
+interface AppHeaderProps {
+  onMenuClick?: () => void
+}
+
+export function AppHeader({ onMenuClick }: AppHeaderProps) {
   const pathname = usePathname()
   const videoUrl = TUTORIAL_LINKS[pathname] || TUTORIAL_LINKS["/dashboard"]
   const videoId = getVideoId(videoUrl)
@@ -56,7 +60,20 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-10 border-b border-white/5 bg-[#0A0A12]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0A0A12]/60">
-      <div className="flex h-16 items-center justify-end px-6">
+      <div className="flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
+        {/* Botão hamburguer — só mobile */}
+        <button
+          onClick={onMenuClick}
+          className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Abrir menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
+        {/* Spacer no desktop (sem hamburguer) */}
+        <div className="hidden md:block" />
+
+        {/* Botão Tutorial */}
         <Dialog>
           <DialogTrigger asChild>
             <Button
@@ -64,7 +81,7 @@ export function AppHeader() {
                 ${showTour ? 'relative z-[60] ring-4 ring-[#00A3FF]/50 ring-offset-2 ring-offset-[#0A0A12]' : ''}`}
             >
               <PlayCircle className="h-4 w-4" />
-              <span className="text-xs font-bold uppercase tracking-wider">Tutorial da Página</span>
+              <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
             </Button>
           </DialogTrigger>
           <DialogContent showCloseButton={false} className="sm:max-w-[800px] p-0 overflow-hidden bg-black/90 border-white/10">
@@ -99,4 +116,4 @@ export function AppHeader() {
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}
     </header>
   )
-}
+}

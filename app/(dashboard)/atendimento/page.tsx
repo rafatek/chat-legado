@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
-  ChevronRight, DollarSign, FileText, User, Trash2
+  ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -92,49 +92,92 @@ function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; pho
   )
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, onDelete }: { message: Message; onDelete?: (msg: Message) => void }) {
   const isMe = message.from_me
+  const isDeleted = message.content === '[Mensagem apagada]'
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
-    <div className={cn("flex gap-2 max-w-[75%]", isMe ? "ml-auto flex-row-reverse" : "mr-auto")}>
+    <div
+      className={cn("group flex gap-2 max-w-[75%]", isMe ? "ml-auto flex-row-reverse" : "mr-auto")}
+      onMouseLeave={() => setMenuOpen(false)}
+    >
       <div className={cn(
-        "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
-        isMe ? "bg-[#00A3FF] text-white rounded-tr-sm" : "bg-[#1A1A23] text-gray-100 border border-white/5 rounded-tl-sm"
+        "relative rounded-2xl px-4 py-2.5 text-sm shadow-sm",
+        isMe ? "bg-[#00A3FF] text-white rounded-tr-sm" : "bg-[#1A1A23] text-gray-100 border border-white/5 rounded-tl-sm",
+        isDeleted && "opacity-50 italic"
       )}>
-        {message.media_url && message.media_type === 'image' && (
-          <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={message.media_url} alt="Mídia" className="w-full h-auto object-cover" />
+
+        {/* Botão ⌄ no canto superior direito DA BOLHA */}
+        {isMe && !isDeleted && !message.id.startsWith('temp-') && (
+          <div className={cn(
+            "absolute top-1 right-1 z-20 transition-opacity",
+            menuOpen ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          )}>
+            <button
+              onClick={() => setMenuOpen(prev => !prev)}
+              className="flex items-center justify-center h-5 w-5 rounded-full bg-black/20 hover:bg-black/40 text-white/80 hover:text-white transition-all"
+              title="Opções da mensagem"
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-6 w-44 bg-[#1C1D22] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
+                <button
+                  onClick={() => { setMenuOpen(false); onDelete?.(message) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Apagar mensagem
+                </button>
+              </div>
+            )}
           </div>
         )}
-        {message.media_url && (message.media_type === 'audio' || message.media_type === 'ptt') && (
-          <div className="mb-2 -mx-2 -mt-1 min-w-[200px] max-w-[260px]">
-            <audio controls src={message.media_url} className="w-full" style={{ height: '45px' }} />
-          </div>
+
+        {isDeleted ? (
+          <p className="leading-relaxed text-xs flex items-center gap-1.5">
+            <Trash2 className="h-3 w-3" /> Você apagou esta mensagem
+          </p>
+        ) : (
+          <>
+            {message.media_url && message.media_type === 'image' && (
+              <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={message.media_url} alt="Mídia" className="w-full h-auto object-cover" />
+              </div>
+            )}
+            {message.media_url && (message.media_type === 'audio' || message.media_type === 'ptt') && (
+              <div className="mb-2 -mx-2 -mt-1 min-w-[200px] max-w-[260px]">
+                <audio controls src={message.media_url} className="w-full" style={{ height: '45px' }} />
+              </div>
+            )}
+            {message.media_url && message.media_type === 'video' && (
+              <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
+                <video controls src={message.media_url} className="w-full h-auto object-cover" />
+              </div>
+            )}
+            {message.media_url && !['image', 'audio', 'ptt', 'video'].includes(message.media_type || '') && (
+              <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg text-xs hover:bg-black/30 transition-colors">
+                <Paperclip className="h-4 w-4" /> Baixar Anexo
+              </a>
+            )}
+            <p className="leading-relaxed break-words whitespace-pre-wrap pr-4">
+              {message.content?.split(/(\*[^*]+\*)/g).map((part, i) =>
+                part.startsWith('*') && part.endsWith('*') ? (
+                  <strong key={i}>{part.slice(1, -1)}</strong>
+                ) : (
+                  part
+                )
+              )}
+            </p>
+          </>
         )}
-        {message.media_url && message.media_type === 'video' && (
-          <div className="mb-2 -mx-2 -mt-1 rounded-xl overflow-hidden max-w-[240px]">
-            <video controls src={message.media_url} className="w-full h-auto object-cover" />
-          </div>
-        )}
-        {message.media_url && !['image', 'audio', 'ptt', 'video'].includes(message.media_type || '') && (
-          <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg text-xs hover:bg-black/30 transition-colors">
-            <Paperclip className="h-4 w-4" /> Baixar Anexo
-          </a>
-        )}
-        <p className="leading-relaxed break-words whitespace-pre-wrap">
-          {message.content?.split(/(\*[^*]+\*)/g).map((part, i) =>
-            part.startsWith('*') && part.endsWith('*') ? (
-              <strong key={i}>{part.slice(1, -1)}</strong>
-            ) : (
-              part
-            )
-          )}
-        </p>
         <div className={cn("flex items-center gap-1 mt-1", isMe ? "justify-end" : "justify-start")}>
           <span className={cn("text-[10px]", isMe ? "text-blue-100/70" : "text-gray-500")}>
             {formatTime(message.created_at)}
           </span>
-          {isMe && (
+          {isMe && !isDeleted && (
             message.status === "read" ? <CheckCheck className="h-4 w-4 text-[#53bdeb]" /> :
             message.status === "delivered" ? <CheckCheck className="h-4 w-4 text-gray-400" /> :
             message.status === "sending" ? <Clock className="h-3 w-3 text-gray-400" /> :
@@ -160,8 +203,12 @@ export default function AtendimentoPage() {
   const [isLoadingConvs, setIsLoadingConvs] = useState(true)
   const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingTime, setRecordingTime] = useState(0)
   const [search, setSearch] = useState("")
   const [isMobileView, setIsMobileView] = useState(false)
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
+  const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null)
   const [availableLabels, setAvailableLabels] = useState<KanbanLabel[]>([])
 
   // Nova Conversa Dialog
@@ -174,6 +221,9 @@ export default function AtendimentoPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
   const processedUrlRef = useRef(false)
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -307,7 +357,7 @@ export default function AtendimentoPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversations', filter: `user_id=eq.${userId}` },
-        (payload) => {
+        (payload: any) => {
           if (payload.eventType === 'INSERT') {
             const newConv = payload.new as Conversation
             setConversations(prev => {
@@ -545,6 +595,89 @@ export default function AtendimentoPage() {
     } finally {
       setIsSending(false)
     }
+  }
+
+  // ---- Audio Recording ----
+  const formatTimeSeconds = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error("Gravação de áudio não suportada (requer HTTPS ou localhost).")
+        return
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data)
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+      setRecordingTime(0)
+
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1)
+      }, 1000)
+    } catch (err) {
+      console.error("Erro ao acessar microfone:", err)
+      toast.error("Permissão de microfone negada ou indisponível")
+    }
+  }
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+      audioChunksRef.current = []
+    }
+    setIsRecording(false)
+    setRecordingTime(0)
+    if (timerRef.current) clearInterval(timerRef.current)
+  }
+
+  const stopAndSendRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' })
+        const file = new File([audioBlob], 'audio.webm', { type: 'audio/webm;codecs=opus' })
+        
+        setIsUploading(true)
+        try {
+          const fileName = `${selectedConv?.id}/audio_${Math.random().toString(36).substring(2)}.webm`
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('chat_media')
+            .upload(fileName, file, { upsert: false })
+            
+          if (uploadError) {
+             toast.error("Erro ao enviar áudio. Tente novamente.")
+             throw uploadError
+          }
+
+          const { data: { publicUrl } } = supabase.storage.from('chat_media').getPublicUrl(fileName)
+          await handleSend(publicUrl, 'ptt') // Send as Push-To-Talk
+        } catch (err: any) {
+          console.error("Audio upload error:", err)
+        } finally {
+          setIsUploading(false)
+        }
+      }
+
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+    }
+    
+    setIsRecording(false)
+    setRecordingTime(0)
+    if (timerRef.current) clearInterval(timerRef.current)
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -799,6 +932,55 @@ export default function AtendimentoPage() {
     }
   }
 
+  // ---- Delete Message ----
+  const handleDeleteMessage = async (message: Message) => {
+    if (!selectedConv || deletingMessageId) return
+    setConfirmDeleteMsg(message)
+  }
+
+  const confirmDeleteMessage = async () => {
+    const message = confirmDeleteMsg
+    if (!message || !selectedConv) return
+    setConfirmDeleteMsg(null)
+    setDeletingMessageId(message.id)
+
+    // Optimistic UI: marca como apagada imediatamente
+    setMessages(prev => prev.map(m =>
+      m.id === message.id ? { ...m, content: '[Mensagem apagada]', media_url: undefined, media_type: undefined } : m
+    ))
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/inbox/delete-message', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ message_id: message.id, conversation_id: selectedConv.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        // Reverte se falhar
+        toast.error(data.error || 'Erro ao apagar mensagem')
+        setMessages(prev => prev.map(m => m.id === message.id ? message : m))
+      } else {
+        if (!data.deleted_from_whatsapp) {
+          toast.warning('Mensagem apagada localmente. Não foi possível apagar no WhatsApp.')
+        } else {
+          toast.success('Mensagem apagada para todos ✓')
+        }
+        // Remove da lista local após confirmação do banco
+        setMessages(prev => prev.filter(m => m.id !== message.id))
+      }
+    } catch {
+      toast.error('Erro de conexão ao apagar mensagem')
+      setMessages(prev => prev.map(m => m.id === message.id ? message : m))
+    } finally {
+      setDeletingMessageId(null)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
@@ -872,7 +1054,7 @@ export default function AtendimentoPage() {
 
   return (
     <>
-      <div className="flex h-full rounded-xl overflow-hidden border border-white/5 bg-[#0A0A0E]">
+      <div className="relative flex h-full rounded-xl overflow-hidden border border-white/5 bg-[#0A0A0E]">
 
         {/* ===== SIDEBAR ===== */}
         <div className={cn(
@@ -1080,11 +1262,11 @@ export default function AtendimentoPage() {
                   </div>
                 </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={handleToggleIAPause}
                     className={cn(
-                        "flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg border",
+                        "flex items-center gap-1.5 text-xs font-medium transition-colors px-2 md:px-3 py-1.5 rounded-lg border",
                         selectedConv.lead_pausado 
                             ? "bg-[#D4A373]/10 text-[#D4A373] border-[#D4A373]/20 hover:bg-[#D4A373]/20" 
                             : "bg-[#00A3FF]/10 text-[#00A3FF] border-[#00A3FF]/20 hover:bg-[#00A3FF]/20"
@@ -1198,14 +1380,20 @@ export default function AtendimentoPage() {
                   </div>
                 ) : (
                   <>
-                    {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+                    {messages.map((msg) => (
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onDelete={handleDeleteMessage}
+                    />
+                  ))}
                     <div ref={messagesEndRef} />
                   </>
                 )}
               </div>
 
               {/* Input Bar */}
-              <div className="p-3 border-t border-white/5 bg-[#0D0D12]">
+              <div className="p-3 pb-safe border-t border-white/5 bg-[#0D0D12]">
                 {activeSignature && (
                   <div className="mb-2 px-1 text-[10px] text-gray-500 flex items-center gap-1.5">
                     <PenTool className="h-3 w-3 text-purple-400" />
@@ -1213,49 +1401,91 @@ export default function AtendimentoPage() {
                   </div>
                 )}
                 <div className="flex items-center gap-2 bg-white/5 rounded-xl border border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading || isSending}
-                    className="h-8 w-8 text-gray-400 hover:text-white flex-shrink-0"
-                    title="Anexar arquivo"
-                  >
-                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-                  </Button>
-                  <textarea
-                    ref={inputRef as any}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Digite uma mensagem..."
-                    rows={1}
-                    className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600 outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
-                    style={{ minHeight: '32px', maxHeight: '120px' }}
-                    onInput={(e) => {
-                      const target = e.target as HTMLTextAreaElement;
-                      target.style.height = '32px';
-                      target.style.height = `${target.scrollHeight}px`;
-                    }}
-                    disabled={isSending}
-                  />
-                  <Button
-                    size="icon"
-                    onClick={() => handleSend()}
-                    disabled={(!newMessage.trim() && !isUploading) || isSending}
-                    className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
-                  >
-                    {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
+                  {isRecording ? (
+                    <div className="flex items-center justify-between w-full h-8">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={cancelRecording}
+                        className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-500/10 flex-shrink-0"
+                        title="Cancelar gravação"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-sm font-mono text-red-400 font-medium">
+                          {formatTimeSeconds(recordingTime)}
+                        </span>
+                      </div>
+                      <Button
+                        size="icon"
+                        onClick={stopAndSendRecording}
+                        className="h-8 w-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 flex-shrink-0 transition-all"
+                        title="Enviar áudio"
+                      >
+                        <Send className="h-4 w-4 text-white" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading || isSending}
+                        className="h-8 w-8 text-gray-400 hover:text-white flex-shrink-0"
+                        title="Anexar arquivo"
+                      >
+                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                      </Button>
+                      <textarea
+                        ref={inputRef as any}
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Digite uma mensagem..."
+                        rows={1}
+                        className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600 outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
+                        style={{ minHeight: '32px', maxHeight: '120px' }}
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = '32px';
+                          target.style.height = `${target.scrollHeight}px`;
+                        }}
+                        disabled={isSending}
+                      />
+                      {(!newMessage.trim() && !isUploading) ? (
+                        <Button
+                          size="icon"
+                          onClick={startRecording}
+                          disabled={isSending}
+                          className="h-8 w-8 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#00A3FF] flex-shrink-0 transition-all"
+                          title="Gravar áudio"
+                        >
+                          <Mic className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="icon"
+                          onClick={() => handleSend()}
+                          disabled={isSending}
+                          className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
+                        >
+                          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
-                <p className="text-[10px] text-gray-700 mt-1.5 text-center">Enter para enviar · Shift+Enter para nova linha</p>
+                <p className="hidden sm:block text-[10px] text-gray-700 mt-1.5 text-center">Enter para enviar · Shift+Enter para nova linha</p>
               </div>
             </>
           ) : (
@@ -1290,7 +1520,11 @@ export default function AtendimentoPage() {
 
         {/* ===== CONTACT SIDEBAR (RIGHT) ===== */}
         {isContactSidebarOpen && selectedConv && (
-          <div className="w-72 flex-shrink-0 border-l border-white/5 bg-[#0D0D12] flex flex-col overflow-hidden">
+          <div className="
+            absolute inset-0 z-30 md:relative md:inset-auto
+            md:w-72 md:flex-shrink-0
+            border-l border-white/5 bg-[#0D0D12] flex flex-col overflow-hidden
+          ">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
               <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Dados do Contato</span>
@@ -1399,6 +1633,38 @@ export default function AtendimentoPage() {
         )}
 
       </div>
+
+      {/* ===== DIALOG: Confirmar Deleção de Mensagem ===== */}
+      <Dialog open={!!confirmDeleteMsg} onOpenChange={(open) => { if (!open) setConfirmDeleteMsg(null) }}>
+        <DialogContent className="sm:max-w-[360px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="h-4 w-4" />
+              Apagar mensagem?
+            </DialogTitle>
+            <DialogDescription>
+              A mensagem será apagada <strong>para todos</strong> no WhatsApp (se estiver dentro do prazo do WhatsApp) e removida do sistema.
+            </DialogDescription>
+          </DialogHeader>
+          {confirmDeleteMsg && (
+            <div className="my-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-400 italic max-h-20 overflow-hidden">
+              {confirmDeleteMsg.content || '[Mídia]'}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDeleteMsg(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmDeleteMessage}
+              className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 gap-2"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Apagar para todos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== DIALOG: Nova Conversa ===== */}
       <Dialog open={isNewConvOpen} onOpenChange={setIsNewConvOpen}>

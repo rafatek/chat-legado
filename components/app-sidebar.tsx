@@ -15,6 +15,7 @@ import {
   Lock,
   Webhook,
   ShieldAlert,
+  X,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -35,12 +36,22 @@ const navigation = [
   { name: "Suporte", href: "/suporte", icon: HelpCircle },
 ]
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
+
+export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [userName, setUserName] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // Fecha a sidebar ao mudar de rota no mobile
+  useEffect(() => {
+    onClose?.()
+  }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -70,22 +81,30 @@ export function AppSidebar() {
     router.replace("/login")
   }
 
-  return (
-    <div className="flex h-screen w-64 flex-col border-r border-white/5 bg-[#050508]">
-      <div className="flex h-40 items-center justify-center border-b border-white/5 px-6">
+  const sidebarContent = (
+    <div className="flex h-full w-64 flex-col border-r border-white/5 bg-[#050508]">
+      {/* Logo + Botão fechar (só mobile) */}
+      <div className="flex h-40 items-center justify-center border-b border-white/5 px-6 relative">
         <div className="relative flex items-center justify-center w-full">
-          <img 
-            src="/apple-icon.png" 
-            alt="Legado" 
+          <img
+            src="/apple-icon.png"
+            alt="Legado"
             className="h-28 w-auto object-contain drop-shadow-[0_0_15px_rgba(0,163,255,0.4)]"
           />
         </div>
+        <button
+          onClick={onClose}
+          className="md:hidden absolute top-3 right-3 p-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Fechar menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-4 custom-scrollbar">
         {navigation.map((item) => {
           const isActive = pathname === item.href
-          
+
           if (item.locked) {
             return (
               <div
@@ -165,4 +184,28 @@ export function AppSidebar() {
       </div>
     </div>
   )
-}
+
+  return (
+    <>
+      {/* Desktop: sidebar fixa, invisível em mobile */}
+      <div className="hidden md:flex h-screen flex-shrink-0">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile: drawer com overlay */}
+      {isOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Overlay escuro */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          {/* Sidebar deslizando da esquerda */}
+          <div className="relative flex h-full animate-in slide-in-from-left duration-300">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

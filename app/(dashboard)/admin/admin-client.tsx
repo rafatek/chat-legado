@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus } from "lucide-react"
+import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus, QrCode, RefreshCw, Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { updateSubscriptionStatus, toggleAdminRole, updateProfileEmail, deleteAdminUser, createAdminUser } from "@/lib/actions/admin"
+import { Smartphone } from "lucide-react"
 
 import {
   Dialog,
@@ -47,6 +48,7 @@ type Profile = {
   server_id: string | null
   is_admin: boolean | null
   updated_at: string | null
+  whatsapp_status?: string
 }
 
 export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] }) {
@@ -65,6 +67,136 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
   // Create user state
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newUser, setNewUser] = useState({ fullName: "", email: "", password: "", whatsapp: "", subscription_id: "" })
+
+  // WhatsApp Support Connection
+  const [connectDialogUser, setConnectDialogUser] = useState<Profile | null>(null)
+  const [connectInstance, setConnectInstance] = useState<{name: string, token: string} | null>(null)
+  const [connectQr, setConnectQr] = useState<string | null>(null)
+  const [connectPhone, setConnectPhone] = useState("")
+  const [connectPairingCode, setConnectPairingCode] = useState<string | null>(null)
+  const [connectLoading, setConnectLoading] = useState(false)
+  const [connectStatus, setConnectStatus] = useState("disconnected")
+
+  const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
+
+  const handleOpenConnect = async (profile: Profile) => {
+    setConnectDialogUser(profile)
+    setConnectLoading(true)
+    setConnectQr(null)
+    setConnectPairingCode(null)
+    setConnectPhone("")
+    setConnectStatus("disconnected")
+
+    // Fetch instance info safely
+    const { getAdminWhatsappConnection, adminCreateWhatsappInstanceForUser } = await import("@/lib/actions/admin")
+    let connData = null
+
+    const { success, data } = await getAdminWhatsappConnection(profile.id)
+
+    if (success && data && data.instance_name && data.instance_key) {
+      connData = data
+    } else {
+      toast.info("Criando nova instância. Aguarde...")
+      const createRes = await adminCreateWhatsappInstanceForUser(profile.id)
+      if (createRes.success) {
+         connData = { instance_name: createRes.instance_name, instance_key: createRes.instance_key, status: 'connecting' }
+      } else {
+         toast.error("Falha ao criar instância: " + createRes.error)
+         setConnectDialogUser(null)
+         setConnectLoading(false)
+         return
+      }
+    }
+
+    if (connData) {
+      setConnectInstance({ name: connData.instance_name, token: connData.instance_key })
+      setConnectStatus(connData.status || 'disconnected')
+      
+      // Fetch QR Code immediately
+      try {
+        const res = await fetch(`${UAZAPI_URL}/instance/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "token": connData.instance_key },
+          body: JSON.stringify({})
+        })
+        const qData = await res.json()
+        const qrBase64 = qData?.instance?.qrcode || qData?.qrcode || qData?.base64 || qData?.instance?.base64
+        if (qrBase64) setConnectQr(qrBase64)
+      } catch(e) {
+        toast.error("Erro ao puxar QR Code")
+      }
+    }
+    setConnectLoading(false)
+  }
+
+  const handleGeneratePairingCode = async () => {
+    if (!connectInstance || !connectPhone) return
+    setConnectLoading(true)
+    try {
+      const cleanPhone = connectPhone.replace(/\D/g, '')
+      // Removemos o ?number da URL, enviando estritamente como o seu cURL
+      const res = await fetch(`${UAZAPI_URL}/instance/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "token": connectInstance.token },
+        body: JSON.stringify({ 
+           browser: "auto",
+           systemName: "rafael turbo",
+           proxy_managed_country: "br",
+           proxy_managed_state: "sp",
+           proxy_managed_city: "campinas",
+           phone: cleanPhone 
+        })
+      })
+      
+      const rawText = await res.text()
+      console.log("[Pairing Code Raw Response]:\n", rawText)
+
+      let data: any = {}
+      try {
+        data = JSON.parse(rawText)
+      } catch (err) {
+        console.error("Não foi possível converter para JSON")
+      }
+      
+      const code = data?.instance?.paircode || data?.paircode || data?.code || data?.pairingCode || data?.instance?.pairingCode || data?.data?.pairingCode
+      if (code) {
+        setConnectPairingCode(code)
+      } else {
+        toast.error(`Erro da API: ${data?.message || data?.error || 'Olhe o Console (F12)'}`)
+      }
+    } catch(e: any) {
+      toast.error(`Erro ao chamar API: ${e.message}`)
+    }
+    setConnectLoading(false)
+  }
+
+  // Polling for Connect Dialog
+  useEffect(() => {
+    if (!connectDialogUser || !connectInstance || connectStatus === 'connected') return
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${UAZAPI_URL}/instance/status`, {
+          headers: { "token": connectInstance.token }
+        })
+        const data = await res.json()
+        const isConnectedApi = data?.connected === true || data?.state === "open" || data?.instance?.state === "open"
+        
+        if (isConnectedApi) {
+          setConnectStatus("connected")
+          toast.success(`WhatsApp conectado com sucesso para ${connectDialogUser.full_name || 'Usuário'}!`)
+          
+          setProfiles(prev => prev.map(p => p.id === connectDialogUser.id ? { ...p, whatsapp_status: 'connected' } : p))
+          
+          setTimeout(() => {
+             setConnectDialogUser(null)
+          }, 2000)
+        }
+      } catch(e) {}
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [connectDialogUser, connectInstance, connectStatus])
 
   const handleUpdateStatus = (userId: string, newStatus: string) => {
     startTransition(async () => {
@@ -164,6 +296,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
           <TableRow className="border-b border-white/10 hover:bg-transparent">
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Usuário</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Server ID</TableHead>
+            <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">WhatsApp</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Status Assinatura</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Última Atualização</TableHead>
             <TableHead className="text-right text-xs font-black uppercase tracking-wider text-gray-400">Ações</TableHead>
@@ -172,7 +305,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
         <TableBody>
           {profiles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                 Nenhum usuário encontrado.
               </TableCell>
             </TableRow>
@@ -205,6 +338,21 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                     </Badge>
                   ) : (
                     <span className="text-muted-foreground text-xs italic">N/A</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {profile.whatsapp_status === 'connected' ? (
+                    <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 gap-1.5 pl-1.5 pr-2">
+                      <Smartphone className="h-3 w-3" /> Conectado
+                    </Badge>
+                  ) : profile.whatsapp_status === 'connecting' ? (
+                    <Badge variant="outline" className="border-yellow-500/30 text-yellow-400 bg-yellow-500/10 gap-1.5 pl-1.5 pr-2">
+                      <Smartphone className="h-3 w-3 animate-pulse" /> Conectando
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-gray-500/30 text-gray-400 bg-gray-500/10 gap-1.5 pl-1.5 pr-2">
+                      <Smartphone className="h-3 w-3" /> Desconectado
+                    </Badge>
                   )}
                 </TableCell>
                 <TableCell>
@@ -270,6 +418,17 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                           Bloquear Acesso
                         </DropdownMenuItem>
                       )}
+
+                      <DropdownMenuSeparator className="bg-white/10" />
+
+                      {/* WhatsApp Connect Action */}
+                      <DropdownMenuItem 
+                        className="cursor-pointer text-purple-400 focus:bg-purple-500/10 focus:text-purple-400"
+                        onClick={() => handleOpenConnect(profile)}
+                      >
+                        <Smartphone className="mr-2 h-4 w-4" />
+                        Conectar WhatsApp (Suporte)
+                      </DropdownMenuItem>
 
                       <DropdownMenuSeparator className="bg-white/10" />
 
@@ -430,6 +589,88 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
               Criar Usuário
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connect WhatsApp Dialog */}
+      <Dialog open={!!connectDialogUser} onOpenChange={(o) => !o && setConnectDialogUser(null)}>
+        <DialogContent className="bg-[#0A0A12] border border-white/10 text-white sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Conexão Assistida</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center space-y-6 py-4">
+            {connectLoading && !connectQr && !connectPairingCode ? (
+              <div className="flex flex-col items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-[#00A3FF]" />
+                <p className="mt-4 text-sm text-gray-400">Carregando dados da instância...</p>
+              </div>
+            ) : connectStatus === 'connected' ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 animate-in fade-in zoom-in">
+                <div className="h-16 w-16 bg-emerald-500/10 rounded-full flex items-center justify-center">
+                  <Check className="h-8 w-8 text-emerald-500" />
+                </div>
+                <div>
+                  <h3 className="text-emerald-500 font-bold text-lg">Conectado com Sucesso!</h3>
+                  <p className="text-sm text-gray-400 mt-2">A instância do WhatsApp de <strong>{connectDialogUser?.full_name || 'Usuário'}</strong> já está operante e pronta para uso.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* QR Code Section */}
+                <div className="w-full flex flex-col items-center justify-center bg-white/5 border border-white/10 rounded-xl p-4">
+                  <h3 className="text-sm font-medium mb-4 flex items-center gap-2 text-gray-300">
+                    <QrCode className="h-4 w-4 text-[#00A3FF]" />
+                    Ler QR Code
+                  </h3>
+                  {connectQr ? (
+                    <div className="bg-white p-2 rounded-lg">
+                      <img src={connectQr} alt="QR Code" className="w-48 h-48 object-contain" />
+                    </div>
+                  ) : (
+                    <div className="w-48 h-48 bg-black/40 flex items-center justify-center rounded-lg border border-white/10">
+                      <QrCode className="h-12 w-12 text-gray-600" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full flex items-center justify-center">
+                  <div className="h-px bg-white/10 w-full"></div>
+                  <span className="px-4 text-xs font-medium text-gray-500 uppercase">Ou</span>
+                  <div className="h-px bg-white/10 w-full"></div>
+                </div>
+
+                {/* Pairing Code Section */}
+                <div className="w-full space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
+                  <h3 className="text-sm font-medium flex items-center gap-2 text-gray-300">
+                    <Smartphone className="h-4 w-4 text-[#00A3FF]" />
+                    Conectar com Número
+                  </h3>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ex: 5511999999999"
+                      value={connectPhone}
+                      onChange={(e) => setConnectPhone(e.target.value)}
+                      className="bg-black/50 border-white/10 text-white"
+                    />
+                    <Button 
+                      onClick={handleGeneratePairingCode}
+                      disabled={connectLoading || !connectPhone}
+                      className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white whitespace-nowrap"
+                    >
+                      {connectLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gerar Código"}
+                    </Button>
+                  </div>
+                  
+                  {connectPairingCode && (
+                    <div className="mt-4 p-4 bg-black/40 border border-white/10 rounded-lg text-center animate-in fade-in zoom-in">
+                      <p className="text-xs text-gray-400 mb-2">Código de Emparelhamento:</p>
+                      <p className="text-4xl font-mono font-bold text-emerald-400 tracking-widest">{connectPairingCode.slice(0,4)}-{connectPairingCode.slice(4)}</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
       </div>
