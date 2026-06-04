@@ -102,9 +102,9 @@ function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; pho
   )
 }
 
-function MessageBubble({ message, onDelete }: { message: Message; onDelete?: (msg: Message) => void }) {
+function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDelete?: (msg: Message) => void; onEdit?: (msg: Message) => void }) {
   const isMe = message.from_me
-  const isDeleted = message.content === '[Mensagem apagada]'
+  const isDeleted = message.content === '[Mensagem apagada]' || message.content === '🚫 Mensagem apagada' || message.status === 'deleted'
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
@@ -133,6 +133,15 @@ function MessageBubble({ message, onDelete }: { message: Message; onDelete?: (ms
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-6 w-44 bg-[#1C1D22] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
+                {(!message.media_url) && (
+                  <button
+                    onClick={() => { setMenuOpen(false); onEdit?.(message) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-white/5 transition-colors"
+                  >
+                    <PenTool className="h-3.5 w-3.5" />
+                    Editar mensagem
+                  </button>
+                )}
                 <button
                   onClick={() => { setMenuOpen(false); onDelete?.(message) }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
@@ -219,6 +228,7 @@ export default function AtendimentoPage() {
   const [isMobileView, setIsMobileView] = useState(false)
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null)
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [availableLabels, setAvailableLabels] = useState<KanbanLabel[]>([])
 
   // Nova Conversa Dialog
@@ -253,7 +263,6 @@ export default function AtendimentoPage() {
   } | null>(null)
   const [isSavingLead, setIsSavingLead] = useState(false)
   const [isLoadingLead, setIsLoadingLead] = useState(false)
-  const [isDeletingContact, setIsDeletingContact] = useState(false)
   const [isDeletingContact, setIsDeletingContact] = useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
 
@@ -554,6 +563,43 @@ export default function AtendimentoPage() {
   // ---- Send Message ----
   const handleSend = async (mediaUrl?: string, mediaType?: string) => {
     if ((!newMessage.trim() && !mediaUrl) || !selectedConv || isSending) return
+
+    if (editingMessage) {
+      setIsSending(true)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/inbox/edit', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || ''}`,
+          },
+          body: JSON.stringify({
+            message_id: editingMessage.id,
+            whatsapp_message_id: editingMessage.whatsapp_message_id,
+            contact_phone: selectedConv.contact_phone,
+            content: newMessage,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          toast.error(data.error || 'Erro ao editar mensagem')
+          return
+        }
+
+        setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: newMessage } : m))
+        setEditingMessage(null)
+        setNewMessage("")
+        toast.success("Mensagem editada com sucesso!")
+      } catch (err) {
+        toast.error("Erro ao editar mensagem")
+      } finally {
+        setIsSending(false)
+      }
+      return
+    }
+
     let content = newMessage.trim()
     if (content && activeSignature) {
       content = `*${activeSignature}:*\n${content}`
@@ -961,13 +1007,17 @@ export default function AtendimentoPage() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/inbox/delete-message', {
+      const res = await fetch('/api/inbox/delete', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`,
         },
-        body: JSON.stringify({ message_id: message.id, conversation_id: selectedConv.id }),
+        body: JSON.stringify({
+          message_id: message.id,
+          whatsapp_message_id: message.whatsapp_message_id,
+          contact_phone: selectedConv.contact_phone,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1391,12 +1441,17 @@ export default function AtendimentoPage() {
                 ) : (
                   <>
                     {messages.map((msg) => (
-                    <MessageBubble
-                      key={msg.id}
-                      message={msg}
-                      onDelete={handleDeleteMessage}
-                    />
-                  ))}
+                      <MessageBubble
+                        key={msg.id}
+                        message={msg}
+                        onDelete={handleDeleteMessage}
+                        onEdit={(msg) => {
+                          setEditingMessage(msg)
+                          setNewMessage(msg.content || "")
+                          inputRef.current?.focus()
+                        }}
+                      />
+                    ))}
                     <div ref={messagesEndRef} />
                   </>
                 )}
@@ -1404,6 +1459,17 @@ export default function AtendimentoPage() {
 
               {/* Input Bar */}
               <div className="p-3 pb-safe border-t border-white/5 bg-[#0D0D12]">
+                {editingMessage && (
+                  <div className="mb-2 px-3 py-1.5 bg-[#00A3FF]/10 text-[#00A3FF] text-xs rounded-lg flex items-center justify-between border border-[#00A3FF]/20">
+                    <span className="flex items-center gap-2">
+                      <PenTool className="h-3.5 w-3.5" />
+                      Editando mensagem...
+                    </span>
+                    <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="hover:bg-white/10 rounded-full p-1 transition-colors">
+                      <X className="h-3 w-3 text-white" />
+                    </button>
+                  </div>
+                )}
                 {activeSignature && (
                   <div className="mb-2 px-1 text-[10px] text-gray-500 flex items-center gap-1.5">
                     <PenTool className="h-3 w-3 text-purple-400" />
@@ -1489,7 +1555,7 @@ export default function AtendimentoPage() {
                           disabled={isSending}
                           className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
                         >
-                          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingMessage ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />)}
                         </Button>
                       )}
                     </>
