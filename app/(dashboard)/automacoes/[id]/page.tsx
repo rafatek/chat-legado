@@ -24,6 +24,7 @@ interface CaptureWebhook {
     mapped_name_key: string | null
     message_template: string
     create_paused: boolean
+    auto_labels?: string[]
 }
 
 export default function AutomacaoConfigPage() {
@@ -32,6 +33,7 @@ export default function AutomacaoConfigPage() {
     const [webhook, setWebhook] = useState<CaptureWebhook | null>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [availableLabels, setAvailableLabels] = useState<any[]>([])
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     // Poll interval ref
@@ -56,8 +58,16 @@ export default function AutomacaoConfigPage() {
         }
     }
 
+    const fetchLabels = async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) return
+        const { data } = await supabase.from('labels').select('*').eq('user_id', session.user.id)
+        if (data) setAvailableLabels(data)
+    }
+
     useEffect(() => {
         fetchWebhook()
+        fetchLabels()
         // Stop polling on unmount
         return () => {
             if (pollInterval.current) clearInterval(pollInterval.current)
@@ -102,7 +112,8 @@ export default function AutomacaoConfigPage() {
                     mapped_phone_key: webhook.mapped_phone_key,
                     mapped_name_key: webhook.mapped_name_key,
                     message_template: webhook.message_template,
-                    create_paused: webhook.create_paused
+                    create_paused: webhook.create_paused,
+                    auto_labels: webhook.auto_labels || []
                 })
                 .eq('id', webhook.id)
 
@@ -308,6 +319,36 @@ export default function AutomacaoConfigPage() {
                             <p className="text-[11px] text-gray-500">
                                 O sistema usará o campo de Telefone (formato internacional com ou sem '+') para procurar ou criar o Lead, e usará o Nome para batizá-lo caso não exista.
                             </p>
+
+                            <div className="space-y-3 pt-4 border-t border-white/5 mt-4">
+                                <Label className="text-gray-400 text-xs uppercase tracking-wider block">Etiquetas Automáticas (Opcional)</Label>
+                                <p className="text-[11px] text-gray-500 mb-2">
+                                    Selecione etiquetas para adicionar aos leads recebidos. A automação do Kanban os moverá para as colunas vinculadas.
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {availableLabels.map(label => {
+                                        const isSelected = webhook.auto_labels?.includes(label.id)
+                                        return (
+                                            <button
+                                                key={label.id}
+                                                onClick={() => {
+                                                    const current = webhook.auto_labels || []
+                                                    const next = isSelected ? current.filter(id => id !== label.id) : [...current, label.id]
+                                                    setWebhook({ ...webhook, auto_labels: next })
+                                                }}
+                                                className={cn(
+                                                    "px-3 py-1 rounded-full text-[11px] font-medium border transition-colors",
+                                                    isSelected ? "bg-white/10" : "bg-transparent hover:bg-white/5 border-white/10 text-gray-400"
+                                                )}
+                                                style={isSelected ? { backgroundColor: `${label.color}20`, color: label.color, borderColor: `${label.color}50` } : {}}
+                                            >
+                                                {label.title}
+                                            </button>
+                                        )
+                                    })}
+                                    {availableLabels.length === 0 && <span className="text-xs text-gray-500 italic">Nenhuma etiqueta criada no CRM.</span>}
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
 

@@ -142,6 +142,25 @@ export async function POST(
         lead = newLead
     }
 
+    // 5.5 Tratamento de Etiquetas Automáticas (auto_labels)
+    if (webhook.auto_labels && Array.isArray(webhook.auto_labels) && webhook.auto_labels.length > 0) {
+        // Busca etiquetas que o lead já possui para não duplicar
+        const { data: existingLabels } = await supabaseAdmin
+            .from('lead_labels')
+            .select('label_id')
+            .eq('lead_id', lead.id)
+            .in('label_id', webhook.auto_labels)
+        
+        const existingSet = new Set(existingLabels?.map(l => l.label_id) || [])
+        const toInsert = webhook.auto_labels
+            .filter((id: string) => !existingSet.has(id))
+            .map((id: string) => ({ lead_id: lead.id, label_id: id }))
+            
+        if (toInsert.length > 0) {
+            await supabaseAdmin.from('lead_labels').insert(toInsert)
+        }
+    }
+
     // 6. Tratamento de CONVERSATION
     let { data: conversation } = await supabaseAdmin
         .from('conversations')

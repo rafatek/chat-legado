@@ -85,6 +85,17 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
         return value
     }
 
+    const cleanPhoneForDb = (phone: string) => {
+        let clean = phone.replace(/\D/g, "")
+        if (clean.startsWith("55") && clean.length >= 12) {
+            clean = clean.slice(2)
+        }
+        if (clean.startsWith("0")) {
+            clean = clean.slice(1)
+        }
+        return clean
+    }
+
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const formatted = formatPhone(e.target.value)
         setNewLeadData({ ...newLeadData, whatsapp: formatted })
@@ -322,13 +333,37 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                 return
             }
 
+            const cleanPhone = cleanPhoneForDb(newLeadData.whatsapp)
+
+            // 1. Criar/Garantir a Conversa
+            const { data: convData, error: convError } = await supabase
+                .from('conversations')
+                .upsert({
+                    user_id: session.user.id,
+                    contact_phone: cleanPhone,
+                    contact_name: newLeadData.full_name,
+                    is_open: true
+                }, {
+                    onConflict: 'user_id,contact_phone'
+                })
+                .select('id')
+                .single()
+
+            if (convError && convError.code !== '23505') {
+                 console.error("Erro ao criar conversa:", convError)
+            }
+
+            const conversationId = convData?.id || null
+
+            // 2. Criar Lead
             const payload = {
                 user_id: session.user.id,
                 column_id: targetColumn.id,
                 full_name: newLeadData.full_name,
-                whatsapp: newLeadData.whatsapp.replace(/\D/g, ""),
+                whatsapp: cleanPhone,
                 origin: "WhatsApp",
-                message_sent: false
+                message_sent: false,
+                conversation_id: conversationId
             }
 
             const { data, error } = await supabase
@@ -403,10 +438,13 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
             }
 
             const lines = pasteData.split("\n").map(l => l.trim()).filter(Boolean)
-            const parsedLeads: { full_name: string; whatsapp: string }[] = []
+            
+            // Map para remover duplicatas nativas da colagem (mantém o último)
+            const uniqueLeadsMap = new Map<string, string>()
 
             for (const line of lines) {
-                const parts = line.split(/\t|;|,,*/)
+                // regex atualizado para suportar vírgula única, exceto entre aspas
+                const parts = line.split(/\t|;|,/)
                 let name = parts[0]?.trim() || "Lead Importado"
                 let rawPhone = parts[1]?.trim() || ""
 
@@ -419,38 +457,86 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                 }
 
                 if (rawPhone) {
-                    let cleanPhone = rawPhone.replace(/\D/g, "")
-                    
-                    if (cleanPhone.startsWith("55") && cleanPhone.length >= 12) {
-                        cleanPhone = cleanPhone.slice(2)
-                    }
-
-                    if (cleanPhone.startsWith("0")) {
-                        cleanPhone = cleanPhone.slice(1)
-                    }
-
+                    const cleanPhone = cleanPhoneForDb(rawPhone)
                     if (cleanPhone.length >= 8) {
-                        parsedLeads.push({
-                            full_name: name,
-                            whatsapp: cleanPhone
-                        })
+                        name = name.replace(/^["']|["']$/g, "")
+                        uniqueLeadsMap.set(cleanPhone, name)
                     }
                 }
             }
 
-            if (parsedLeads.length === 0) {
+            if (uniqueLeadsMap.size === 0) {
                 toast.warning("Nenhum contato com número de WhatsApp válido foi identificado.")
                 setIsImporting(false)
                 return
             }
 
-            const payloads = parsedLeads.map(lead => ({
+            const phonesToImport = Array.from(uniqueLeadsMap.keys())
+
+            // 1. Buscar leads existentes no banco (Deduplicação)
+            const { data: existingLeads, error: existingError } = await supabase
+                .from('leads')
+                .select('id, whatsapp, full_name, conversation_id')
+                .eq('user_id', session.user.id)
+                .in('whatsapp', phonesToImport)
+
+            if (existingError) throw existingError
+
+            const existingMap = new Map(existingLeads?.map(l => [l.whatsapp, l]))
+
+            const leadsToInsert: any[] = []
+            const leadsToUpdate: any[] = []
+
+            for (const [phone, name] of uniqueLeadsMap.entries()) {
+                const existing = existingMap.get(phone)
+                if (existing) {
+                    if (existing.full_name !== name) {
+                        leadsToUpdate.push({ id: existing.id, full_name: name })
+                    }
+                } else {
+                    leadsToInsert.push({ phone, name })
+                }
+            }
+
+            // 2. Atualizar Nomes se necessário
+            for (const updatePayload of leadsToUpdate) {
+                await supabase.from('leads').update({ full_name: updatePayload.full_name }).eq('id', updatePayload.id)
+            }
+
+            if (leadsToInsert.length === 0) {
+                toast.success(`Concluído! ${leadsToUpdate.length} contatos atualizados. Nenhum novo lead para inserir.`)
+                setIsImportOpen(false)
+                setPasteData("")
+                router.refresh()
+                return
+            }
+
+            // 3. Garantir conversas para os NOVOS leads via UPSERT em lote
+            const convUpserts = leadsToInsert.map(l => ({
+                user_id: session.user.id,
+                contact_phone: l.phone,
+                contact_name: l.name,
+                is_open: true
+            }))
+
+            const { data: convData, error: convError } = await supabase
+                .from('conversations')
+                .upsert(convUpserts, { onConflict: 'user_id,contact_phone' })
+                .select('id, contact_phone')
+
+            if (convError) throw convError
+
+            const convMap = new Map(convData?.map(c => [c.contact_phone, c.id]))
+
+            // 4. Inserir Novos Leads
+            const payloads = leadsToInsert.map(l => ({
                 user_id: session.user.id,
                 column_id: targetColumn.id,
-                full_name: lead.full_name,
-                whatsapp: lead.whatsapp,
+                full_name: l.name,
+                whatsapp: l.phone,
                 origin: "Outros",
-                message_sent: false
+                message_sent: false,
+                conversation_id: convMap.get(l.phone) || null
             }))
 
             const { data, error } = await supabase
@@ -460,7 +546,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
 
             if (error) throw error
 
-            toast.success(`${data ? data.length : parsedLeads.length} leads importados com sucesso!`)
+            toast.success(`${data?.length || 0} criados. ${leadsToUpdate.length} atualizados.`)
             setIsImportOpen(false)
             setPasteData("")
             router.refresh()
