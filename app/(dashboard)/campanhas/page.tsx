@@ -128,12 +128,12 @@ export default function CampaignsPage() {
                 </Button>
             </div>
 
-            <Card className="border-white/10 bg-white/5 backdrop-blur-sm">
+            <Card className="border-border bg-card backdrop-blur-sm">
                 <CardContent className="p-0">
                     <Table>
                         {/* ... Table Header ... */}
                         <TableHeader>
-                            <TableRow className="border-white/10 hover:bg-white/5">
+                            <TableRow className="border-border hover:bg-accent">
                                 <TableHead>Nome</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="text-center">Total</TableHead>
@@ -159,7 +159,7 @@ export default function CampaignsPage() {
                                 campaigns.map((campaign) => (
                                     <TableRow
                                         key={campaign.id}
-                                        className="border-white/10 hover:bg-white/5 relative transition-colors"
+                                        className="border-border hover:bg-accent relative transition-colors"
                                         style={activatingId === campaign.id ? {
                                             backgroundImage: 'linear-gradient(90deg, rgba(16, 185, 129, 0.15), transparent)',
                                             backgroundRepeat: 'no-repeat',
@@ -251,11 +251,11 @@ export default function CampaignsPage() {
                                                             <MoreHorizontal className="h-4 w-4" />
                                                         </Button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="bg-[#0A0A0C] border-white/10">
+                                                    <DropdownMenuContent align="end" className="bg-popover border-border">
                                                         {campaign.status !== 'completed' && (
                                                             <DropdownMenuItem
                                                                 onClick={() => handleEdit(campaign)}
-                                                                className="focus:bg-white/5 cursor-pointer"
+                                                                className="focus:bg-accent cursor-pointer"
                                                             >
                                                                 <Edit className="mr-2 h-4 w-4 text-blue-400" />
                                                                 Editar

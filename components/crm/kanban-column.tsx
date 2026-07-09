@@ -55,7 +55,7 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
     return (
         <div className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
             {/* Column Header */}
-            <div className="flex items-center justify-between p-4 mb-2 rounded-lg bg-[#111114] border border-white/5 group">
+            <div className="flex items-center justify-between p-4 mb-2 rounded-lg bg-card border border-border group">
                 <div className="flex flex-col gap-1.5 flex-1 mr-2">
                     <div className="flex items-center gap-2">
                         {isEditing ? (
@@ -67,25 +67,25 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
                                     onBlur={handleSaveTitle}
                                     onKeyDown={handleKeyDown}
                                     disabled={isSaving}
-                                    className="bg-black/50 text-sm font-semibold text-white px-2 py-1 rounded w-full outline-none border border-white/20 focus:border-[#00A3FF]"
+                                    className="bg-background text-sm font-semibold text-foreground px-2 py-1 rounded w-full outline-none border border-border focus:border-[#00A3FF]"
                                 />
                                 {isSaving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
                             </div>
                         ) : (
                             <>
                                 <h3 
-                                    className="font-semibold text-sm text-gray-200 cursor-text hover:text-white transition-colors"
+                                    className="font-semibold text-sm text-foreground cursor-text hover:text-primary transition-colors"
                                     onClick={() => setIsEditing(true)}
                                     title="Clique para renomear"
                                 >
                                     {column.title}
                                 </h3>
-                                <Badge variant="secondary" className="text-xs bg-white/5 hover:bg-white/10 text-gray-400 ml-1">
+                                <Badge variant="secondary" className="text-xs bg-accent hover:bg-accent/80 text-muted-foreground ml-1">
                                     {column.leads.length}
                                 </Badge>
                                 <button 
                                     onClick={() => setIsEditing(true)}
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-white"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
                                 >
                                     <Edit2 className="h-3 w-3" />
                                 </button>
@@ -104,7 +104,7 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-gray-500 hover:text-red-400 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => onDelete(column.id)}
                         title="Excluir Coluna"
                     >
@@ -133,7 +133,7 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
                         ref={provided.innerRef}
                         className={`
                 flex-1 flex flex-col gap-3 p-2 rounded-lg transition-colors overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent
-                ${snapshot.isDraggingOver ? "bg-white/[0.02]" : "bg-transparent"}
+                ${snapshot.isDraggingOver ? "bg-accent/30" : "bg-transparent"}
             `}
                         style={{ minHeight: '150px', flexGrow: 1, maxHeight: 'calc(100vh - 200px)' }}
                     >

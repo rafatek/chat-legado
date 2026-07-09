@@ -577,7 +577,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                         <DialogTrigger asChild>
                             <Button
                                 variant="outline"
-                                className="bg-[#111114] border-white/10 hover:bg-white/5 text-gray-300 hover:text-white"
+                                className="bg-card border-border hover:bg-accent text-muted-foreground hover:text-foreground"
                             >
                                 <Plus className="mr-2 h-4 w-4" /> Nova Coluna
                             </Button>
@@ -663,7 +663,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                                     {availableLabels.length === 0 ? (
                                         <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
                                     ) : (
-                                        <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-black/20 border border-white/5 max-h-36 overflow-y-auto custom-scrollbar">
+                                        <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-accent/50 border border-border max-h-36 overflow-y-auto custom-scrollbar">
                                             {availableLabels.map((label) => {
                                                 const isSelected = selectedNewLeadLabelIds.includes(label.id)
                                                 return (
@@ -683,7 +683,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                                                             color: isSelected ? '#FFF' : label.color
                                                         }}
                                                         className={`
-                                                            px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-white/5
+                                                            px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-accent
                                                             ${isSelected ? "border-solid font-extrabold" : "border-dashed opacity-60"}
                                                         `}
                                                     >
@@ -708,7 +708,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                         <DialogTrigger asChild>
                             <Button
                                 variant="outline"
-                                className="bg-[#111114] border-white/10 hover:bg-white/5 text-gray-300 hover:text-white"
+                                className="bg-card border-border hover:bg-accent text-muted-foreground hover:text-foreground"
                             >
                                 <FileText className="mr-2 h-4 w-4" /> Importar Planilha
                             </Button>
@@ -729,7 +729,7 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
                                         value={pasteData}
                                         onChange={(e) => setPasteData(e.target.value)}
                                         rows={10}
-                                        className="font-mono text-sm bg-black/40 border-white/10"
+                                        className="font-mono text-sm bg-accent/50 border-border"
                                     />
                                     <span className="text-xs text-muted-foreground">
                                         Os números serão formatados automaticamente (remoção de parênteses, traços, DDD zero inicial, e o DDI 55 se houver). Os contatos serão criados na coluna de &quot;Novos Leads&quot;.

@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
-  ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic
+  ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic, Zap, Filter, CalendarClock
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,6 +38,13 @@ import {
 // =============================================
 // Types
 // =============================================
+interface QuickReply {
+  id: string
+  user_id: string
+  title: string
+  content: string
+}
+
 interface Conversation {
   id: string
   contact_phone: string
@@ -225,11 +232,27 @@ export default function AtendimentoPage() {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [search, setSearch] = useState("")
+  const [selectedLabelFilter, setSelectedLabelFilter] = useState<string | null>(null)
   const [isMobileView, setIsMobileView] = useState(false)
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [availableLabels, setAvailableLabels] = useState<KanbanLabel[]>([])
+
+  // Quick Replies
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
+  const [isQuickRepliesMenuOpen, setIsQuickRepliesMenuOpen] = useState(false)
+  const [isManageQuickRepliesOpen, setIsManageQuickRepliesOpen] = useState(false)
+  const [newQuickReplyTitle, setNewQuickReplyTitle] = useState("")
+  const [newQuickReplyContent, setNewQuickReplyContent] = useState("")
+  const [editingQuickReply, setEditingQuickReply] = useState<QuickReply | null>(null)
+  const [isSavingQuickReply, setIsSavingQuickReply] = useState(false)
+
+  // Agendamento
+  const [isAgendamentoOpen, setIsAgendamentoOpen] = useState(false)
+  const [agendamentoText, setAgendamentoText] = useState("")
+  const [agendamentoDate, setAgendamentoDate] = useState("")
+  const [isSavingAgendamento, setIsSavingAgendamento] = useState(false)
 
   // Nova Conversa Dialog
   const [isNewConvOpen, setIsNewConvOpen] = useState(false)
@@ -356,19 +379,105 @@ export default function AtendimentoPage() {
     if (data) setAvailableLabels(data)
   }, [userId])
 
+  const loadQuickReplies = useCallback(async () => {
+    if (!userId) return
+    const { data } = await supabase.from('quick_replies').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    if (data) setQuickReplies(data)
+  }, [userId])
+
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => { loadLabels() }, [loadLabels])
+  useEffect(() => { loadQuickReplies() }, [loadQuickReplies])
+
+  const handleSaveQuickReply = async () => {
+    if (!userId || !newQuickReplyTitle.trim() || !newQuickReplyContent.trim()) return
+    setIsSavingQuickReply(true)
+    try {
+      if (editingQuickReply) {
+        const { error } = await supabase.from('quick_replies').update({
+          title: newQuickReplyTitle,
+          content: newQuickReplyContent
+        }).eq('id', editingQuickReply.id)
+        if (error) throw error
+        toast.success("Resposta rápida atualizada!")
+      } else {
+        const { error } = await supabase.from('quick_replies').insert({
+          user_id: userId,
+          title: newQuickReplyTitle,
+          content: newQuickReplyContent
+        })
+        if (error) throw error
+        toast.success("Resposta rápida criada!")
+      }
+      setNewQuickReplyTitle("")
+      setNewQuickReplyContent("")
+      setEditingQuickReply(null)
+      loadQuickReplies()
+    } catch (err) {
+      toast.error("Erro ao salvar resposta rápida")
+    } finally {
+      setIsSavingQuickReply(false)
+    }
+  }
+
+  const handleDeleteQuickReply = async (id: string) => {
+    if (!confirm("Tem certeza que deseja apagar?")) return
+    const { error } = await supabase.from('quick_replies').delete().eq('id', id)
+    if (error) toast.error("Erro ao apagar")
+    else {
+      toast.success("Resposta apagada!")
+      loadQuickReplies()
+    }
+  }
+
+  const handleSaveAgendamento = async () => {
+    if (!userId || !agendamentoText.trim() || !agendamentoDate || !selectedConv) {
+      toast.warning("Preencha todos os campos para agendar.")
+      return
+    }
+    setIsSavingAgendamento(true)
+    try {
+      const scheduledAt = new Date(agendamentoDate).toISOString()
+      const { error } = await supabase.from('agendamentos').insert({
+        user_id: userId,
+        lead_id: selectedConv.lead_id || null,
+        conversation_id: selectedConv.id,
+        contact_phone: selectedConv.contact_phone,
+        content: agendamentoText,
+        scheduled_at: scheduledAt
+      })
+      if (error) throw error
+      toast.success("Mensagem agendada com sucesso!")
+      setIsAgendamentoOpen(false)
+      setAgendamentoText("")
+      setAgendamentoDate("")
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao agendar mensagem.")
+    } finally {
+      setIsSavingAgendamento(false)
+    }
+  }
 
   // ---- Search Filter ----
   useEffect(() => {
+    let filtered = conversations;
+    
+    if (selectedLabelFilter) {
+      filtered = filtered.filter(c => c.labels?.some(l => l.id === selectedLabelFilter))
+    }
+    
     const q = search.toLowerCase()
-    if (!q) { setFilteredConvs(conversations); return }
-    setFilteredConvs(conversations.filter(c =>
-      c.contact_name?.toLowerCase().includes(q) ||
-      c.contact_phone.includes(q) ||
-      c.last_message?.toLowerCase().includes(q)
-    ))
-  }, [search, conversations])
+    if (q) {
+      filtered = filtered.filter(c =>
+        c.contact_name?.toLowerCase().includes(q) ||
+        c.contact_phone.includes(q) ||
+        c.last_message?.toLowerCase().includes(q)
+      )
+    }
+    
+    setFilteredConvs(filtered)
+  }, [search, conversations, selectedLabelFilter])
 
   // ---- Realtime: Conversations ----
   useEffect(() => {
@@ -561,8 +670,9 @@ export default function AtendimentoPage() {
 
 
   // ---- Send Message ----
-  const handleSend = async (mediaUrl?: string, mediaType?: string) => {
-    if ((!newMessage.trim() && !mediaUrl) || !selectedConv || isSending) return
+  const handleSend = async (mediaUrl?: string, mediaType?: string, overrideText?: string) => {
+    const textToSend = overrideText !== undefined ? overrideText : newMessage
+    if ((!textToSend.trim() && !mediaUrl) || !selectedConv || isSending) return
 
     if (editingMessage) {
       setIsSending(true)
@@ -578,7 +688,7 @@ export default function AtendimentoPage() {
             message_id: editingMessage.id,
             whatsapp_message_id: editingMessage.whatsapp_message_id,
             contact_phone: selectedConv.contact_phone,
-            content: newMessage,
+            content: textToSend,
           }),
         })
 
@@ -588,9 +698,9 @@ export default function AtendimentoPage() {
           return
         }
 
-        setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: newMessage } : m))
+        setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: textToSend } : m))
         setEditingMessage(null)
-        setNewMessage("")
+        if (overrideText === undefined) setNewMessage("")
         toast.success("Mensagem editada com sucesso!")
       } catch (err) {
         toast.error("Erro ao editar mensagem")
@@ -600,12 +710,12 @@ export default function AtendimentoPage() {
       return
     }
 
-    let content = newMessage.trim()
+    let content = textToSend.trim()
     if (content && activeSignature) {
       content = `*${activeSignature}:*\n${content}`
     }
     content = content || "[Mídia]"
-    setNewMessage("")
+    if (overrideText === undefined) setNewMessage("")
     setIsSending(true)
 
     const tempMsg: Message = {
@@ -634,7 +744,7 @@ export default function AtendimentoPage() {
       if (!res.ok) {
         toast.error(data.error || "Erro ao enviar mensagem")
         setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
-        setNewMessage(content)
+        if (overrideText === undefined) setNewMessage(content)
         return
       }
       setMessages(prev => {
@@ -647,7 +757,7 @@ export default function AtendimentoPage() {
     } catch {
       toast.error("Erro de conexão ao enviar mensagem")
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
-      setNewMessage(content)
+      if (overrideText === undefined) setNewMessage(content)
     } finally {
       setIsSending(false)
     }
@@ -1143,14 +1253,34 @@ export default function AtendimentoPage() {
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar conversa..."
-                className="pl-9 h-9 bg-white/5 border-white/5 text-sm text-gray-200 placeholder:text-gray-600 focus-visible:ring-[#00A3FF]/30"
-              />
+            <div className="flex gap-2 relative">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar conversa..."
+                  className="pl-9 h-9 bg-accent/50 border-border text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-[#00A3FF]/30"
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className={cn("h-9 w-9 flex-shrink-0 border", selectedLabelFilter ? "bg-[#00A3FF]/10 text-[#00A3FF] border-[#00A3FF]/20" : "bg-accent/50 border-border text-gray-500 hover:text-white")}>
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48 bg-card border-border">
+                  <DropdownMenuItem onClick={() => setSelectedLabelFilter(null)} className={cn("text-xs cursor-pointer", !selectedLabelFilter && "font-bold text-[#00A3FF]")}>
+                    Todas as conversas
+                  </DropdownMenuItem>
+                  {availableLabels.map(label => (
+                    <DropdownMenuItem key={label.id} onClick={() => setSelectedLabelFilter(label.id)} className={cn("text-xs cursor-pointer flex items-center gap-2", selectedLabelFilter === label.id && "font-bold bg-accent")}>
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: label.color }}></span>
+                      {label.title}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -1323,6 +1453,65 @@ export default function AtendimentoPage() {
                 </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {/* Botão Agendamento */}
+                  <Popover open={isAgendamentoOpen} onOpenChange={setIsAgendamentoOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="flex items-center gap-1.5 text-xs font-medium transition-colors px-2 md:px-3 py-1.5 rounded-lg border bg-[#00A3FF]/10 text-[#00A3FF] border-[#00A3FF]/20 hover:bg-[#00A3FF]/20"
+                        title="Agendar Mensagem"
+                      >
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Agendamento</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0 border-white/10 bg-[#12121A] shadow-2xl" align="end">
+                      <div className="flex items-center justify-between p-3 border-b border-white/5">
+                        <h4 className="font-semibold text-white text-sm flex items-center gap-2">
+                          <CalendarClock className="h-4 w-4 text-[#00A3FF]" />
+                          Agendar Mensagem
+                        </h4>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setIsAgendamentoOpen(false)}
+                          className="h-6 w-6 hover:bg-white/10"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="p-3 space-y-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-400">Data e Hora do Envio</Label>
+                          <Input
+                            type="datetime-local"
+                            value={agendamentoDate}
+                            onChange={(e) => setAgendamentoDate(e.target.value)}
+                            min={new Date().toISOString().slice(0, 16)}
+                            className="h-9 text-sm bg-white/5 border-white/10 [color-scheme:dark]"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-400">Mensagem</Label>
+                          <Textarea
+                            value={agendamentoText}
+                            onChange={(e) => setAgendamentoText(e.target.value)}
+                            placeholder="Digite o texto da mensagem que será agendada..."
+                            className="min-h-[100px] text-sm bg-white/5 border-white/10 resize-none custom-scrollbar"
+                          />
+                        </div>
+                        <div className="pt-1">
+                          <Button
+                            onClick={handleSaveAgendamento}
+                            disabled={!agendamentoText.trim() || !agendamentoDate || isSavingAgendamento}
+                            className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-9"
+                          >
+                            {isSavingAgendamento ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Agendar'}
+                          </Button>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
                   <button
                     onClick={handleToggleIAPause}
                     className={cn(
@@ -1522,6 +1711,141 @@ export default function AtendimentoPage() {
                       >
                         {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                       </Button>
+
+                      {/* Botão Respostas Rápidas */}
+                      <Popover open={isQuickRepliesMenuOpen} onOpenChange={setIsQuickRepliesMenuOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={isSending || isUploading}
+                            className="h-8 w-8 text-gray-400 hover:text-[#00A3FF] hover:bg-[#00A3FF]/10 flex-shrink-0"
+                            title="Respostas Rápidas"
+                          >
+                            <Zap className="h-4 w-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" align="start" className="w-80 p-0 border-white/10 bg-[#12121A] shadow-2xl mb-2">
+                          {!isManageQuickRepliesOpen ? (
+                            <>
+                              <div className="flex items-center justify-between p-3 border-b border-white/5">
+                                <h4 className="font-semibold text-white text-sm flex items-center gap-2">
+                                  <Zap className="h-4 w-4 text-[#00A3FF]" />
+                                  Respostas Rápidas
+                                </h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setIsManageQuickRepliesOpen(true)}
+                                  className="h-7 text-xs text-[#00A3FF] hover:text-[#00A3FF] hover:bg-[#00A3FF]/10"
+                                >
+                                  Gerenciar
+                                </Button>
+                              </div>
+                              <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                                {quickReplies.length === 0 ? (
+                                  <div className="text-center p-4 text-xs text-gray-500">
+                                    Nenhuma resposta rápida cadastrada.
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-1">
+                                    {quickReplies.map(qr => (
+                                      <button
+                                        key={qr.id}
+                                        onClick={() => {
+                                          setIsQuickRepliesMenuOpen(false);
+                                          handleSend(undefined, undefined, qr.content);
+                                        }}
+                                        className="text-left p-2.5 rounded-lg hover:bg-white/5 transition-colors group flex flex-col gap-1"
+                                      >
+                                        <span className="font-medium text-gray-200 text-sm group-hover:text-[#00A3FF] transition-colors line-clamp-1">{qr.title}</span>
+                                        <span className="text-xs text-gray-500 line-clamp-2">{qr.content}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between p-3 border-b border-white/5">
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => { setIsManageQuickRepliesOpen(false); setEditingQuickReply(null); setNewQuickReplyTitle(""); setNewQuickReplyContent(""); }}
+                                    className="h-6 w-6 hover:bg-white/10 -ml-1"
+                                  >
+                                    <ArrowLeft className="h-3 w-3" />
+                                  </Button>
+                                  <h4 className="font-semibold text-white text-sm">
+                                    {editingQuickReply ? 'Editar Resposta' : 'Nova Resposta'}
+                                  </h4>
+                                </div>
+                              </div>
+                              <div className="p-3 space-y-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-400">Título (ex: Boas vindas)</Label>
+                                  <Input
+                                    value={newQuickReplyTitle}
+                                    onChange={e => setNewQuickReplyTitle(e.target.value)}
+                                    placeholder="Digite um título..."
+                                    className="h-8 text-sm bg-white/5 border-white/10"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-400">Mensagem</Label>
+                                  <Textarea
+                                    value={newQuickReplyContent}
+                                    onChange={e => setNewQuickReplyContent(e.target.value)}
+                                    placeholder="Digite o texto da mensagem..."
+                                    className="min-h-[80px] text-sm bg-white/5 border-white/10 resize-none custom-scrollbar"
+                                  />
+                                </div>
+                                <div className="pt-2">
+                                  <Button
+                                    onClick={handleSaveQuickReply}
+                                    disabled={!newQuickReplyTitle.trim() || !newQuickReplyContent.trim() || isSavingQuickReply}
+                                    className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-8 text-xs"
+                                  >
+                                    {isSavingQuickReply ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Salvar'}
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="max-h-40 overflow-y-auto border-t border-white/5 custom-scrollbar p-2">
+                                {quickReplies.map(qr => (
+                                  <div key={qr.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 group">
+                                    <span className="text-sm text-gray-300 font-medium truncate flex-1 pr-2">{qr.title}</span>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                          setEditingQuickReply(qr);
+                                          setNewQuickReplyTitle(qr.title);
+                                          setNewQuickReplyContent(qr.content);
+                                        }}
+                                        className="h-6 w-6 text-gray-400 hover:text-white"
+                                      >
+                                        <PenTool className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleDeleteQuickReply(qr.id)}
+                                        className="h-6 w-6 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+
                       <textarea
                         ref={inputRef as any}
                         value={newMessage}

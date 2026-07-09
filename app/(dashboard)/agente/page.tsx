@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bot, MessageSquare, Megaphone, Settings2, Power, Loader2, Calendar } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { AtendimentoConfigSheet } from "@/components/agents/atendimento-config-sheet"
+import { AgendamentoConfigSheet } from "@/components/agents/agendamento-config-sheet"
 
 // Type for card summary data
 interface AgentSummary {
@@ -24,10 +25,12 @@ interface AgentSummary {
 
 export default function AgentsHubPage() {
   const [isAtendimentoSheetOpen, setIsAtendimentoSheetOpen] = useState(false)
+  const [isAgendamentoSheetOpen, setIsAgendamentoSheetOpen] = useState(false)
   
 
   // Local state for dashboard cards (to show active status without opening sheet)
   const [atendimentoSummary, setAtendimentoSummary] = useState<AgentSummary | null>(null)
+  const [agendamentoSummary, setAgendamentoSummary] = useState<AgentSummary | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchSummaries = async () => {
@@ -48,6 +51,20 @@ export default function AgentsHubPage() {
           agent_name: atendimento.agent_name || "Agente de Atendimento"
         })
       }
+
+      // Fetch agendamento status
+      const { data: agendamentoData } = await supabase
+        .from('agents_agendamento_config')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .single()
+        
+      if (agendamentoData) {
+        setAgendamentoSummary({
+          is_active: agendamentoData.is_active,
+          agent_name: "Agente de Agendamento"
+        })
+      }
     } catch (error) {
       console.error("Error fetching summaries", error)
     } finally {
@@ -57,7 +74,7 @@ export default function AgentsHubPage() {
 
   useEffect(() => {
     fetchSummaries()
-  }, [isAtendimentoSheetOpen]) // Re-fetch when sheet closes to update status
+  }, [isAtendimentoSheetOpen, isAgendamentoSheetOpen]) // Re-fetch when sheet closes to update status
 
   return (
     <div className="space-y-8 p-6">
@@ -118,12 +135,60 @@ export default function AgentsHubPage() {
           </CardFooter>
         </Card>
 
+        {/* === CARD AGENTE AGENDAMENTO === */}
+        <Card className="relative overflow-hidden border-blue-500/20 bg-gradient-to-b from-card to-card/50 transition-all hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/5">
+          <div className="absolute top-0 right-0 p-4">
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              <Badge variant={agendamentoSummary?.is_active ? "default" : "secondary"} className={agendamentoSummary?.is_active ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" : ""}>
+                {agendamentoSummary?.is_active ? "Ativo" : "Pausado"}
+              </Badge>
+            )}
+          </div>
+
+          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+              <Calendar className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle>Agendamento</CardTitle>
+              <CardDescription className="line-clamp-2">
+                Gerencia marcações integradas diretamente com seu Google Agenda.
+              </CardDescription>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>Google Agenda</span>
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter>
+            <Button
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-900/20"
+              onClick={() => setIsAgendamentoSheetOpen(true)}
+            >
+              <Settings2 className="mr-2 h-4 w-4" />
+              Configurar Agente
+            </Button>
+          </CardFooter>
+        </Card>
+
       </div>
 
       {/* Sheets / Modals */}
       <AtendimentoConfigSheet
         open={isAtendimentoSheetOpen}
         onOpenChange={setIsAtendimentoSheetOpen}
+      />
+      <AgendamentoConfigSheet
+        open={isAgendamentoSheetOpen}
+        onOpenChange={setIsAgendamentoSheetOpen}
       />
     </div>
   )

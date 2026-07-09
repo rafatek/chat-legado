@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { useState, useEffect } from "react"
 import { OnboardingTour } from "@/components/onboarding-tour"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const TUTORIAL_LINKS: Record<string, string> = {
   "/dashboard": "",
@@ -59,7 +60,7 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-10 border-b border-white/5 bg-[#0A0A12]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0A0A12]/60">
+    <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
         {/* Botão hamburguer — só mobile */}
         <button
@@ -73,17 +74,20 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
         {/* Spacer no desktop (sem hamburguer) */}
         <div className="hidden md:block" />
 
-        {/* Botão Tutorial */}
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button
-              className={`gap-2 bg-[#00A3FF] hover:bg-[#0082CC] text-white shadow-lg shadow-[#00A3FF]/20 transition-all hover:scale-105 
-                ${showTour ? 'relative z-[60] ring-4 ring-[#00A3FF]/50 ring-offset-2 ring-offset-[#0A0A12]' : ''}`}
-            >
-              <PlayCircle className="h-4 w-4" />
-              <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
-            </Button>
-          </DialogTrigger>
+        {/* Ações da direita: Tema + Tutorial */}
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                className={`gap-2 bg-[#00A3FF] hover:bg-[#0082CC] text-white shadow-lg shadow-[#00A3FF]/20 transition-all hover:scale-105 
+                  ${showTour ? 'relative z-[60] ring-4 ring-[#00A3FF]/50 ring-offset-2 ring-offset-background' : ''}`}
+              >
+                <PlayCircle className="h-4 w-4" />
+                <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
+              </Button>
+            </DialogTrigger>
           <DialogContent showCloseButton={false} className="sm:max-w-[800px] p-0 overflow-hidden bg-black/90 border-white/10">
             <DialogHeader className="flex flex-row items-center justify-between p-4 absolute z-10 w-full bg-gradient-to-b from-black/80 to-transparent">
               <DialogTitle className="text-white text-sm font-bold uppercase tracking-widest">
@@ -112,6 +116,7 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}
     </header>

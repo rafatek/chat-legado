@@ -27,3 +27,15 @@ export interface ProspectingConfig {
     created_at?: string
     updated_at?: string
 }
+
+export interface AgendamentoConfig {
+    id?: string
+    user_id?: string
+    prompt_agendamento?: string
+    google_access_token?: string
+    google_refresh_token?: string
+    google_token_expiry?: string
+    is_active?: boolean
+    created_at?: string
+    updated_at?: string
+}

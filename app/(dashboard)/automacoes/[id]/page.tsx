@@ -220,7 +220,7 @@ export default function AutomacaoConfigPage() {
             {/* Header / URL Bar style Leylim */}
             <Card className="border-blue-500/20 bg-blue-500/5">
                 <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
-                    <div className="flex items-center gap-3 bg-white/5 border border-white/10 p-2 px-4 rounded-full w-full md:w-auto flex-1">
+                    <div className="flex items-center gap-3 bg-accent/50 border border-border p-2 px-4 rounded-full w-full md:w-auto flex-1">
                         <div className="flex items-center gap-2 mr-2">
                             <span className="text-sm font-semibold">Modo Teste</span>
                             <Switch 
@@ -271,7 +271,7 @@ export default function AutomacaoConfigPage() {
                 
                 {/* Lado Esquerdo: Configurações */}
                 <div className="lg:col-span-7 space-y-6">
-                    <Card className="border-white/10 bg-[#0A0A12] backdrop-blur-sm">
+                    <Card className="border-border bg-card backdrop-blur-sm">
                         <CardHeader className="pb-3 border-b border-white/5">
                             <CardTitle className="text-base text-gray-200">Mapeamento de Dados OBRIGATÓRIOS</CardTitle>
                         </CardHeader>
@@ -352,7 +352,7 @@ export default function AutomacaoConfigPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="border-white/10 bg-[#0A0A12] backdrop-blur-sm">
+                    <Card className="border-border bg-card backdrop-blur-sm">
                         <CardHeader className="pb-3 border-b border-white/5">
                             <CardTitle className="text-base text-gray-200">Mensagem Personalizada</CardTitle>
                         </CardHeader>

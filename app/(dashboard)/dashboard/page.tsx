@@ -129,7 +129,7 @@ export default function DashboardPage() {
   const saudacao = hora >= 5 && hora < 12 ? "Bom dia" : hora >= 12 && hora < 18 ? "Boa tarde" : "Boa noite"
 
   return (
-    <div className="space-y-6 pb-10 bg-[#050508] min-h-screen text-white">
+    <div className="space-y-6 pb-10 bg-background min-h-screen text-foreground">
       <div>
         <h1 className="text-3xl font-black tracking-tight uppercase italic flex items-center gap-2">
           Olá,&nbsp;
@@ -164,24 +164,24 @@ export default function DashboardPage() {
           { title: "Disparos Ativos", value: metrics.activeCampaigns, icon: Zap },
           { title: "Mensagens Enviadas", value: metrics.totalMessagesSent, icon: MessageSquare },
         ].map((item, i) => (
-          <Card key={i} className="bg-white/[0.01] border-white/5 backdrop-blur-xl">
+          <Card key={i} className="bg-card border-border backdrop-blur-xl">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-600">{item.title}</CardTitle>
               <item.icon className="h-4 w-4 text-[#00A3FF]" />
             </CardHeader>
             <CardContent>
-              {loading ? <div className="h-8 w-20 bg-white/5 rounded animate-pulse" /> : <div className="text-3xl font-black tracking-tight text-white">{item.value}</div>}
+              {loading ? <div className="h-8 w-20 bg-accent rounded animate-pulse" /> : <div className="text-3xl font-black tracking-tight text-foreground">{item.value}</div>}
             </CardContent>
           </Card>
         ))}
 
-        <Card className="bg-white/[0.01] border-white/5 backdrop-blur-xl">
+        <Card className="bg-card border-border backdrop-blur-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-600">Status Conexão</CardTitle>
             <Smartphone className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
-            {loading ? <div className="h-6 w-24 bg-white/5 rounded animate-pulse" /> : (
+            {loading ? <div className="h-6 w-24 bg-accent rounded animate-pulse" /> : (
               <div className="space-y-1">
                 <div className={`flex items-center gap-2 font-black uppercase text-xs tracking-widest ${metrics.connectionStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
                   {metrics.connectionStatus === 'connected' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
@@ -199,7 +199,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-7">
-        <Card className="col-span-4 bg-white/[0.01] border-white/5 backdrop-blur-xl">
+        <Card className="col-span-4 bg-card border-border backdrop-blur-xl">
           <CardHeader>
             <CardTitle className="text-sm font-black uppercase tracking-widest text-[#00A3FF]">Funil de Vendas</CardTitle>
             <CardDescription className="text-[10px] uppercase text-gray-700 tracking-wider font-bold">Distribuição por etapa do CRM</CardDescription>
@@ -221,7 +221,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-3 bg-white/[0.01] border-white/5 backdrop-blur-xl">
+        <Card className="col-span-3 bg-card border-border backdrop-blur-xl">
           <CardHeader>
             <CardTitle className="text-sm font-black uppercase tracking-widest text-[#00A3FF]">Origem dos Leads</CardTitle>
             <CardDescription className="text-[10px] uppercase text-gray-700 tracking-wider font-bold">Principais canais de entrada</CardDescription>

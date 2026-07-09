@@ -290,7 +290,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
         </Button>
       </div>
 
-      <div className="rounded-md border border-white/10 bg-[#0A0A12]/50 backdrop-blur-md">
+      <div className="rounded-md border border-border bg-card/50 backdrop-blur-md">
       <Table>
         <TableHeader>
           <TableRow className="border-b border-white/10 hover:bg-transparent">
@@ -322,7 +322,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                       )}
                     </div>
                     <div>
-                      <p className="font-semibold text-white">
+                      <p className="font-semibold text-foreground">
                         {profile.full_name || "Usuário Sem Nome"}
                       </p>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">
@@ -394,7 +394,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-[#0A0A12] border-white/10">
+                    <DropdownMenuContent align="end" className="bg-popover border-border">
                       <DropdownMenuLabel className="font-bold text-xs uppercase tracking-wider text-gray-400">Ações do Usuário</DropdownMenuLabel>
                       <DropdownMenuSeparator className="bg-white/10" />
                       

@@ -210,7 +210,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                         {...provided.draggableProps}
                         {...provided.dragHandleProps}
                         className={`
-                group relative flex flex-col gap-3 rounded-xl border border-white/5 bg-[#111114] p-4 
+                group relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 
                 shadow-sm transition-all hover:border-primary/50 hover:shadow-md
                 ${snapshot.isDragging ? "z-50 border-primary/50 shadow-xl rotate-2" : ""}
             `}
@@ -229,7 +229,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-white bg-white/5"
+                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground bg-accent"
                                     onClick={(e) => {
                                         e.stopPropagation()
                                         setIsEditOpen(true)
@@ -243,7 +243,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
 
                         {/* Lead Info */}
                         <div>
-                            <h4 className="font-medium text-sm text-white line-clamp-2 mb-1">
+                            <h4 className="font-medium text-sm text-foreground line-clamp-2 mb-1">
                                 {lead.full_name}
                             </h4>
                             <div className="flex flex-wrap gap-1 mb-2">
@@ -274,7 +274,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                         </div>
 
                         {/* Actions */}
-                        <div className="mt-auto pt-2 border-t border-white/5 flex items-center gap-1">
+                        <div className="mt-auto pt-2 border-t border-border flex items-center gap-1">
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -322,7 +322,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                             {availableLabels.length === 0 ? (
                                 <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
                             ) : (
-                                <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-black/20 border border-white/5 max-h-36 overflow-y-auto custom-scrollbar">
+                                <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-accent/50 border border-border max-h-36 overflow-y-auto custom-scrollbar">
                                     {availableLabels.map((label) => {
                                         const isSelected = selectedLabelIds.includes(label.id)
                                         return (
@@ -342,7 +342,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                                                     color: isSelected ? '#FFF' : label.color 
                                                 }}
                                                 className={`
-                                                    px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-white/5
+                                                    px-2.5 py-1 text-xs font-bold rounded-md border transition-all hover:bg-accent
                                                     ${isSelected ? "border-solid font-extrabold" : "border-dashed opacity-60"}
                                                 `}
                                             >
@@ -377,19 +377,19 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
 
             {/* ALERT DIALOG: Confirmação de Exclusão de Lead */}
             <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-                <AlertDialogContent className="bg-[#1A1A23] border-white/10 text-white">
+                <AlertDialogContent className="bg-popover border-border text-foreground">
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="text-white">Excluir Lead Permanentemente?</AlertDialogTitle>
-                        <AlertDialogDescription className="text-gray-400">
+                        <AlertDialogTitle className="text-foreground">Excluir Lead Permanentemente?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-muted-foreground">
                             Esta ação é <strong className="text-red-400">irreversível</strong>. Ela excluirá este lead do CRM/Kanban e todas as suas etiquetas vinculadas.
                             <br /><br />
-                            A conversa e o histórico de mensagens no chat de atendimento <strong className="text-white">não</strong> serão excluídos.
+                            A conversa e o histórico de mensagens no chat de atendimento <strong className="text-foreground">não</strong> serão excluídos.
                             <br /><br />
                             Deseja realmente continuar?
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300">
+                        <AlertDialogCancel className="bg-accent/50 border-border hover:bg-accent text-muted-foreground">
                             Cancelar
                         </AlertDialogCancel>
                         <AlertDialogAction

@@ -118,7 +118,7 @@ export default async function CRMPage() {
         <p className="mt-1 text-muted-foreground">Gerencie seus leads e oportunidades em tempo real.</p>
       </div>
 
-      <div className="flex-1 overflow-hidden bg-[#0A0A0C] border border-white/5 rounded-xl p-4 shadow-inner">
+      <div className="flex-1 overflow-hidden bg-background border border-border rounded-xl p-4 shadow-inner">
         <KanbanBoard initialColumns={columns} availableLabels={availableLabels} />
       </div>
     </div>

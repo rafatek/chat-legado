@@ -16,6 +16,7 @@ import {
   Webhook,
   ShieldAlert,
   X,
+  Zap,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -31,6 +32,7 @@ const navigation = [
   { name: "Remarketing", href: "#", icon: Target, locked: true },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
   { name: "Automações", href: "/automacoes", icon: Webhook },
+  { name: "Gatilhos", href: "/gatilhos", icon: Zap },
   { name: "Agente IA", href: "/agente", icon: BrainCircuit },
   { name: "Minha Conta", href: "/conta", icon: User },
   { name: "Suporte", href: "/suporte", icon: HelpCircle },
@@ -82,9 +84,9 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
   }
 
   const sidebarContent = (
-    <div className="flex h-full w-64 flex-col border-r border-white/5 bg-[#050508]">
+    <div className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       {/* Logo + Botão fechar (só mobile) */}
-      <div className="flex h-40 items-center justify-center border-b border-white/5 px-6 relative">
+      <div className="flex h-40 items-center justify-center border-b border-sidebar-border px-6 relative">
         <div className="relative flex items-center justify-center w-full">
           <img
             src="/apple-icon.png"
@@ -94,7 +96,7 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
         </div>
         <button
           onClick={onClose}
-          className="md:hidden absolute top-3 right-3 p-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+          className="md:hidden absolute top-3 right-3 p-1.5 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
           aria-label="Fechar menu"
         >
           <X className="h-5 w-5" />
@@ -109,15 +111,15 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
             return (
               <div
                 key={item.name}
-                className="flex items-center justify-between rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-widest text-gray-600 bg-black/20 cursor-not-allowed opacity-80"
+                className="flex items-center justify-between rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-widest text-sidebar-foreground/50 bg-sidebar-accent/50 cursor-not-allowed opacity-80"
               >
                 <div className="flex items-center gap-3">
                   <item.icon className="h-4 w-4 text-gray-700" />
                   <span className="opacity-60">{item.name}</span>
                 </div>
-                <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded-sm border border-white/5">
-                  <Lock className="h-2.5 w-2.5 text-gray-500" />
-                  <span className="text-[8px] text-gray-400 tracking-normal normal-case">Em breve</span>
+                <div className="flex items-center gap-1 bg-sidebar-accent px-1.5 py-0.5 rounded-sm border border-sidebar-border">
+                  <Lock className="h-2.5 w-2.5 text-sidebar-foreground/50" />
+                  <span className="text-[8px] text-sidebar-foreground/50 tracking-normal normal-case">Em breve</span>
                 </div>
               </div>
             )
@@ -131,10 +133,10 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-widest transition-all duration-200",
                 isActive
                   ? "bg-[#00A3FF]/10 text-[#00A3FF] border border-[#00A3FF]/20"
-                  : "text-gray-500 hover:bg-white/5 hover:text-white",
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
               )}
             >
-              <item.icon className={cn("h-4 w-4", isActive ? "text-[#00A3FF]" : "text-gray-600")} />
+              <item.icon className={cn("h-4 w-4", isActive ? "text-[#00A3FF]" : "text-sidebar-foreground/50")} />
               {item.name}
             </Link>
           )
@@ -156,7 +158,7 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
         )}
       </nav>
 
-      <div className="border-t border-white/5 p-4 space-y-3 bg-[#0A0A12]/50">
+      <div className="border-t border-sidebar-border p-4 space-y-3 bg-sidebar/50">
         <div className="flex items-center gap-3 px-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#00A3FF]/20 border border-[#00A3FF]/30">
             <User className="h-4 w-4 text-[#00A3FF]" />
@@ -165,18 +167,18 @@ export function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
             {loading ? (
               <div className="h-3 w-20 bg-white/5 rounded animate-pulse" />
             ) : (
-              <p className="text-xs font-black truncate text-white uppercase tracking-wider">
+              <p className="text-xs font-black truncate text-sidebar-foreground uppercase tracking-wider">
                 {userName}
               </p>
             )}
-            <p className="text-[9px] text-gray-600 uppercase tracking-tighter font-bold">Administrador</p>
+            <p className="text-[9px] text-sidebar-foreground/50 uppercase tracking-tighter font-bold">Administrador</p>
           </div>
         </div>
 
         <Button
           variant="ghost"
           onClick={handleLogout}
-          className="w-full justify-start gap-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 h-9 px-2"
+          className="w-full justify-start gap-3 text-sidebar-foreground/60 hover:text-red-500 hover:bg-red-500/10 h-9 px-2"
         >
           <LogOut className="h-4 w-4" />
           <span className="text-[10px] font-black uppercase tracking-[0.2em]">Sair</span>
