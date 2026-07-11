@@ -121,7 +121,7 @@ function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDele
     >
       <div className={cn(
         "relative rounded-2xl px-4 py-2.5 text-sm shadow-sm",
-        isMe ? "bg-[#00A3FF] text-white rounded-tr-sm" : "bg-[#1A1A23] text-gray-100 border border-white/5 rounded-tl-sm",
+        isMe ? "bg-[#00A3FF] text-white rounded-tr-sm" : "bg-card dark:bg-[#1A1A23] text-foreground dark:text-gray-100 border border-border dark:border-white/5 rounded-tl-sm",
         isDeleted && "opacity-50 italic"
       )}>
 
@@ -139,7 +139,7 @@ function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDele
               <ChevronDown className="h-3 w-3" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-6 w-44 bg-[#1C1D22] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 top-6 w-44 bg-popover dark:bg-[#1C1D22] border border-border dark:border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
                 {(!message.media_url) && (
                   <button
                     onClick={() => { setMenuOpen(false); onEdit?.(message) }}
@@ -1257,19 +1257,19 @@ export default function AtendimentoPage() {
 
   return (
     <>
-      <div className="relative flex h-full rounded-xl overflow-hidden border border-white/5 bg-[#0A0A0E]">
+      <div className="relative flex h-full rounded-xl overflow-hidden border border-border dark:border-white/5 bg-background dark:bg-[#0A0A0E]">
 
         {/* ===== SIDEBAR ===== */}
         <div className={cn(
-          "flex flex-col border-r border-white/5 bg-[#0D0D12] transition-all duration-300",
+          "flex flex-col border-r border-border dark:border-white/5 bg-card dark:bg-[#0D0D12] transition-all duration-300",
           "w-full md:w-[340px] md:flex-shrink-0",
           isMobileView && selectedConv ? "hidden md:flex" : "flex"
         )}>
           {/* Header */}
-          <div className="p-4 border-b border-white/5">
+          <div className="p-4 border-b border-border dark:border-white/5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-white">Atendimento</h1>
+                <h1 className="text-base font-bold text-foreground dark:text-white">Atendimento</h1>
                 {totalUnread > 0 && (
                   <Badge className="bg-[#00A3FF] text-white text-[10px] h-5 min-w-5 flex items-center justify-center px-1.5">
                     {totalUnread}
@@ -1325,7 +1325,7 @@ export default function AtendimentoPage() {
               </div>
             ) : filteredConvs.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-                <div className="h-14 w-14 rounded-full bg-white/5 flex items-center justify-center">
+                <div className="h-14 w-14 rounded-full bg-accent dark:bg-white/5 flex items-center justify-center">
                   <MessageSquare className="h-6 w-6 text-gray-600" />
                 </div>
                 <p className="text-sm text-gray-500">Nenhuma conversa ainda</p>
@@ -1347,7 +1347,7 @@ export default function AtendimentoPage() {
                   key={conv.id}
                   onClick={() => handleSelectConv(conv)}
                   className={cn(
-                    "w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03] border-b border-white/[0.03]",
+                    "w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-accent dark:hover:bg-white/[0.03] border-b border-border dark:border-white/[0.03]",
                     selectedConv?.id === conv.id && "bg-[#00A3FF]/5 border-l-2 border-l-[#00A3FF]"
                   )}
                 >
@@ -1357,7 +1357,7 @@ export default function AtendimentoPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-sm font-semibold text-gray-100 truncate">
+                      <span className="text-sm font-semibold text-foreground dark:text-gray-100 truncate">
                         {conv.contact_name || conv.contact_phone}
                       </span>
                       <span className="text-[10px] text-gray-600 flex-shrink-0">{formatTime(conv.last_message_at)}</span>
@@ -1395,23 +1395,23 @@ export default function AtendimentoPage() {
 
         {/* ===== CHAT PANEL ===== */}
         <div className={cn(
-          "flex-1 flex flex-col",
+          "flex-1 flex flex-col min-w-0",
           !isMobileView && !selectedConv ? "hidden md:flex" : "flex",
           isMobileView && !selectedConv ? "hidden" : ""
         )}>
           {selectedConv ? (
             <>
               {/* Chat Header */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-[#0D0D12]">
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-border dark:border-white/5 bg-card dark:bg-[#0D0D12]">
                 <button
                   onClick={() => { setSelectedConv(null); setIsMobileView(false) }}
-                  className="md:hidden text-gray-400 hover:text-white"
+                  className="md:hidden text-muted-foreground hover:text-foreground dark:text-gray-400 dark:hover:text-white"
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </button>
                 <div 
                   onClick={() => setIsContactSidebarOpen(prev => !prev)}
-                  className="flex items-center gap-3 hover:bg-white/5 p-1.5 -ml-1.5 rounded-lg transition-colors text-left flex-1 cursor-pointer"
+                  className="flex items-center gap-3 hover:bg-accent dark:hover:bg-white/5 p-1.5 -ml-1.5 rounded-lg transition-colors text-left flex-1 cursor-pointer"
                   title="Ver dados do contato"
                   role="button"
                   tabIndex={0}
@@ -1425,7 +1425,7 @@ export default function AtendimentoPage() {
                   <ContactAvatar name={selectedConv.contact_name || selectedConv.contact_phone} phone={selectedConv.contact_phone} size="md" picUrl={selectedConv.profile_pic_url} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-white truncate">{selectedConv.contact_name || selectedConv.contact_phone}</p>
+                        <p className="text-sm font-semibold text-foreground dark:text-white truncate">{selectedConv.contact_name || selectedConv.contact_phone}</p>
                         <p className="text-[11px] text-gray-500 font-mono hidden sm:block flex-shrink-0">{selectedConv.contact_phone}</p>
                     </div>
                   {/* Etiquetas no Cabeçalho do Chat */}
@@ -1457,7 +1457,7 @@ export default function AtendimentoPage() {
                                   <Plus className="h-3 w-3" />
                               </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48 bg-[#1A1A23] border-white/10" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuContent align="start" className="w-48 bg-popover dark:bg-[#1A1A23] border-border dark:border-white/10" onClick={(e) => e.stopPropagation()}>
                               {availableLabels.length === 0 ? (
                                   <div className="px-2 py-2 text-xs text-gray-500 text-center">Nenhuma etiqueta criada no CRM</div>
                               ) : (
@@ -1471,7 +1471,7 @@ export default function AtendimentoPage() {
                                               e.stopPropagation()
                                               handleAddLabel(selectedConv.lead_id, lbl.id)
                                             }}
-                                            className="text-xs text-gray-200 cursor-pointer flex items-center gap-2 hover:bg-white/5 data-[highlighted]:bg-white/10 outline-none"
+                                            className="text-xs text-foreground dark:text-gray-200 cursor-pointer flex items-center gap-2 hover:bg-accent dark:hover:bg-white/5 data-[highlighted]:bg-accent dark:data-[highlighted]:bg-white/10 outline-none"
                                         >
                                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: lbl.color }} />
                                             <span className="truncate">{lbl.title}</span>
@@ -1497,7 +1497,7 @@ export default function AtendimentoPage() {
                         <span className="hidden sm:inline">Agendamento</span>
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-80 p-0 border-white/10 bg-[#12121A] shadow-2xl" align="end">
+                    <PopoverContent className="w-80 p-0 border-border dark:border-white/10 bg-popover dark:bg-[#12121A] shadow-2xl" align="end">
                       <div className="flex items-center justify-between p-3 border-b border-white/5">
                         <h4 className="font-semibold text-white text-sm flex items-center gap-2">
                           <CalendarClock className="h-4 w-4 text-[#00A3FF]" />
@@ -1574,7 +1574,7 @@ export default function AtendimentoPage() {
                         <span className="hidden sm:inline">{activeSignature || "Assinatura"}</span>
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-64 p-3 border-[#2A2D35] bg-[#1C1D22] text-sm" align="end">
+                    <PopoverContent className="w-64 p-3 border-border dark:border-[#2A2D35] bg-popover dark:bg-[#1C1D22] text-sm" align="end">
                       <div className="space-y-4">
                         <div>
                           <h4 className="font-medium text-white mb-2 text-xs uppercase tracking-wider text-gray-400">Assinatura Ativa</h4>
@@ -1647,7 +1647,7 @@ export default function AtendimentoPage() {
               </div>
 
               {/* Messages Area */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-[#080810]">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-background dark:bg-[#080810]">
                 {isLoadingMsgs ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="h-6 w-6 animate-spin text-[#00A3FF]" />
@@ -1680,7 +1680,7 @@ export default function AtendimentoPage() {
               </div>
 
               {/* Input Bar */}
-              <div className="p-3 pb-safe border-t border-white/5 bg-[#0D0D12]">
+              <div className="p-3 pb-safe border-t border-border dark:border-white/5 bg-card dark:bg-[#0D0D12]">
                 {editingMessage && (
                   <div className="mb-2 px-3 py-1.5 bg-[#00A3FF]/10 text-[#00A3FF] text-xs rounded-lg flex items-center justify-between border border-[#00A3FF]/20">
                     <span className="flex items-center gap-2">
@@ -1698,7 +1698,7 @@ export default function AtendimentoPage() {
                     Enviando mensagem como: <strong className="text-gray-300 font-medium">{activeSignature}</strong>
                   </div>
                 )}
-                <div className="flex items-center gap-2 bg-white/5 rounded-xl border border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
+                <div className="flex items-center gap-2 bg-accent/50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
                   {isRecording ? (
                     <div className="flex items-center justify-between w-full h-8">
                       <Button
@@ -1758,7 +1758,7 @@ export default function AtendimentoPage() {
                             <Zap className="h-4 w-4" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent side="top" align="start" className="w-80 p-0 border-white/10 bg-[#12121A] shadow-2xl mb-2">
+                        <PopoverContent side="top" align="start" className="w-80 p-0 border-border dark:border-white/10 bg-popover dark:bg-[#12121A] shadow-2xl mb-2">
                           {!isManageQuickRepliesOpen ? (
                             <>
                               <div className="flex items-center justify-between p-3 border-b border-white/5">
@@ -1791,7 +1791,7 @@ export default function AtendimentoPage() {
                                         }}
                                         className="text-left p-2.5 rounded-lg hover:bg-white/5 transition-colors group flex flex-col gap-1"
                                       >
-                                        <span className="font-medium text-gray-200 text-sm group-hover:text-[#00A3FF] transition-colors line-clamp-1">{qr.title}</span>
+                                        <span className="font-medium text-foreground dark:text-gray-200 text-sm group-hover:text-[#00A3FF] transition-colors line-clamp-1">{qr.title}</span>
                                         <span className="text-xs text-gray-500 line-clamp-2">{qr.content}</span>
                                       </button>
                                     ))}
@@ -1900,7 +1900,7 @@ export default function AtendimentoPage() {
                           size="icon"
                           onClick={startRecording}
                           disabled={isSending}
-                          className="h-8 w-8 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#00A3FF] flex-shrink-0 transition-all"
+                          className="h-8 w-8 rounded-lg bg-transparent hover:bg-accent dark:hover:bg-white/10 text-muted-foreground dark:text-gray-400 hover:text-[#00A3FF] flex-shrink-0 transition-all"
                           title="Gravar áudio"
                         >
                           <Mic className="h-4 w-4" />
@@ -1929,7 +1929,7 @@ export default function AtendimentoPage() {
                   <MessageSquare className="h-9 w-9 text-[#00A3FF]" />
                 </div>
                 {totalUnread > 0 && (
-                  <div className="absolute -top-1 -right-1 h-5 w-5 bg-emerald-500 rounded-full border-2 border-[#0A0A0E] flex items-center justify-center">
+                  <div className="absolute -top-1 -right-1 h-5 w-5 bg-emerald-500 rounded-full border-2 border-background dark:border-[#0A0A0E] flex items-center justify-center">
                     <span className="text-[8px] font-bold text-white">{totalUnread}</span>
                   </div>
                 )}
@@ -1956,7 +1956,7 @@ export default function AtendimentoPage() {
           <div className="
             absolute inset-0 z-30 md:relative md:inset-auto
             md:w-72 md:flex-shrink-0
-            border-l border-white/5 bg-[#0D0D12] flex flex-col overflow-hidden
+            border-l border-border dark:border-white/5 bg-card dark:bg-[#0D0D12] flex flex-col overflow-hidden
           ">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
@@ -1998,7 +1998,7 @@ export default function AtendimentoPage() {
                       value={leadDetails.full_name}
                       onChange={(e) => setLeadDetails(prev => prev ? { ...prev, full_name: e.target.value } : prev)}
                       placeholder="Nome do lead"
-                      className="h-8 text-sm bg-white/5 border-white/10 text-gray-100 focus-visible:ring-[#00A3FF]/40"
+                      className="h-8 text-sm bg-background dark:bg-white/5 border-border dark:border-white/10 text-foreground dark:text-gray-100 focus-visible:ring-[#00A3FF]/40"
                     />
                   </div>
 
@@ -2013,7 +2013,7 @@ export default function AtendimentoPage() {
                         value={leadDetails.valor}
                         onChange={(e) => setLeadDetails(prev => prev ? { ...prev, valor: e.target.value } : prev)}
                         placeholder="0,00"
-                        className="h-8 text-sm pl-8 bg-white/5 border-white/10 text-gray-100 focus-visible:ring-[#00A3FF]/40"
+                        className="h-8 text-sm pl-8 bg-background dark:bg-white/5 border-border dark:border-white/10 text-foreground dark:text-gray-100 focus-visible:ring-[#00A3FF]/40"
                         type="text"
                         inputMode="decimal"
                       />
@@ -2030,7 +2030,7 @@ export default function AtendimentoPage() {
                       onChange={(e) => setLeadDetails(prev => prev ? { ...prev, detalhes: e.target.value } : prev)}
                       placeholder="Resumo da conversa, observações, lembretes..."
                       rows={6}
-                      className="text-sm bg-white/5 border-white/10 text-gray-100 resize-none focus-visible:ring-[#00A3FF]/40 placeholder:text-gray-600"
+                      className="text-sm bg-background dark:bg-white/5 border-border dark:border-white/10 text-foreground dark:text-gray-100 resize-none focus-visible:ring-[#00A3FF]/40 placeholder:text-muted-foreground dark:placeholder:text-gray-600"
                     />
                   </div>
                 </>
@@ -2165,7 +2165,7 @@ export default function AtendimentoPage() {
 
       {/* ===== ALERT DIALOG: Confirmação de Exclusão de Contato ===== */}
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-        <AlertDialogContent className="bg-[#1A1A23] border-white/10 text-white">
+        <AlertDialogContent className="bg-popover dark:bg-[#1A1A23] border-border dark:border-white/10 text-foreground dark:text-white">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-white">Excluir Contato Permanentemente?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-400">
