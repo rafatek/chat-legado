@@ -437,10 +437,32 @@ export default function AtendimentoPage() {
     }
     setIsSavingAgendamento(true)
     try {
+      let finalLeadId = selectedConv.lead_id
+      
+      // Fallback: se o lead_id não estiver no estado (ex: recém criado), busca no banco
+      if (!finalLeadId) {
+        const { data: leadData } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('conversation_id', selectedConv.id)
+          .maybeSingle()
+        
+        if (leadData) {
+          finalLeadId = leadData.id
+        } else {
+          const { data: leadDataPhone } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('whatsapp', selectedConv.contact_phone)
+            .maybeSingle()
+          if (leadDataPhone) finalLeadId = leadDataPhone.id
+        }
+      }
+
       const scheduledAt = new Date(agendamentoDate).toISOString()
       const { error } = await supabase.from('agendamentos').insert({
         user_id: userId,
-        lead_id: selectedConv.lead_id || null,
+        lead_id: finalLeadId || null,
         conversation_id: selectedConv.id,
         contact_phone: selectedConv.contact_phone,
         content: agendamentoText,
@@ -943,6 +965,8 @@ export default function AtendimentoPage() {
           .eq("whatsapp", phone)
           .maybeSingle()
 
+        let leadIdToUse = existingLead?.id
+
         if (!existingLead) {
           // Busca a primeira coluna (position 0) para colocar o lead
           const { data: firstCol, error: colErr } = await supabase
@@ -956,7 +980,7 @@ export default function AtendimentoPage() {
           if (colErr) console.warn("CRM: erro ao buscar primeira coluna:", colErr)
           if (!firstCol) console.warn("CRM: nenhuma coluna encontrada para user_id:", userId)
 
-          const { error: leadInsertErr } = await supabase.from("leads").insert({
+          const { data: newLead, error: leadInsertErr } = await supabase.from("leads").insert({
             user_id: userId,
             full_name: newConvName.trim() || phone,
             whatsapp: phone,
@@ -965,10 +989,13 @@ export default function AtendimentoPage() {
             last_message: firstMsg || "[Contato Criado]",
             last_message_at: new Date().toISOString(),
             conversation_id: conv.id,
-          })
+          }).select("id").single()
 
           if (leadInsertErr) console.warn("CRM: erro ao inserir lead:", leadInsertErr)
-          else console.log(`CRM: Lead criado para ${phone} na coluna ${firstCol?.id ?? 'sem coluna'}`)
+          else {
+            console.log(`CRM: Lead criado para ${phone} na coluna ${firstCol?.id ?? 'sem coluna'}`)
+            if (newLead) leadIdToUse = newLead.id
+          }
         } else {
           // Lead já existe — apenas atualiza last_message e vincula conversa
           await supabase.from("leads").update({
@@ -976,6 +1003,12 @@ export default function AtendimentoPage() {
             last_message_at: new Date().toISOString(),
             conversation_id: conv.id,
           }).eq("id", existingLead.id)
+        }
+
+        // Vincular lead_id de volta na conversa e no objeto local
+        if (leadIdToUse) {
+          await supabase.from("conversations").update({ lead_id: leadIdToUse }).eq('id', conv.id)
+          conv.lead_id = leadIdToUse
         }
       } catch (leadErr) {
         console.warn("Aviso: não foi possível sincronizar lead no CRM:", leadErr)
