@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -77,6 +78,9 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
     const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([])
     const [isDeletingLead, setIsDeletingLead] = useState(false)
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+    const [rmkEnabled, setRmkEnabled] = useState(true)
+    const [initialRmkEnabled, setInitialRmkEnabled] = useState(true)
+    const [isRmkLoading, setIsRmkLoading] = useState(false)
 
     useEffect(() => {
         if (isEditOpen) {
@@ -85,6 +89,29 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                 valor: lead.valor !== undefined && lead.valor !== null ? lead.valor.toString() : (lead.value ? (lead.value / 100).toString() : "")
             })
             setSelectedLabelIds(lead.labels?.map(l => l.id) || [])
+            
+            const fetchRmkState = async () => {
+                setIsRmkLoading(true)
+                try {
+                    const { data, error } = await supabase
+                        .from('remarketing_leads')
+                        .select('rmk_enabled')
+                        .eq('lead_id', lead.id)
+                        .maybeSingle()
+                    
+                    if (error) throw error
+                    
+                    const enabled = data ? data.rmk_enabled : true
+                    setRmkEnabled(enabled)
+                    setInitialRmkEnabled(enabled)
+                } catch (err) {
+                    console.error("Erro ao buscar estado do RMK:", err)
+                } finally {
+                    setIsRmkLoading(false)
+                }
+            }
+            
+            fetchRmkState()
         }
     }, [isEditOpen, lead])
 
@@ -141,6 +168,27 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                     .eq('lead_id', lead.id)
                     .in('label_id', labelsToRemove)
                 if (deleteError) throw deleteError
+            }
+
+            if (rmkEnabled !== initialRmkEnabled) {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (session?.user?.id) {
+                    const rmkPayload: any = {
+                        lead_id: lead.id,
+                        user_id: session.user.id,
+                        rmk_enabled: rmkEnabled,
+                    }
+                    if (rmkEnabled) {
+                        rmkPayload.remarketing_status = "none"
+                        rmkPayload.remarketing_attempts = 0
+                        rmkPayload.last_remarketing_at = null
+                    }
+                    const { error: rmkError } = await supabase
+                        .from('remarketing_leads')
+                        .upsert(rmkPayload, { onConflict: "lead_id" })
+                    
+                    if (rmkError) throw rmkError
+                }
             }
 
             toast.success("Lead atualizado com sucesso!")
@@ -351,6 +399,24 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                                         )
                                     })}
                                 </div>
+                            )}
+                        </div>
+                        
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-accent/50 border border-border mt-2">
+                            <div className="space-y-0.5">
+                                <Label className="text-sm font-semibold">Remarketing Automático</Label>
+                                <p className="text-[11px] text-muted-foreground">
+                                    Ative para incluir o lead no fluxo de disparo automático.
+                                </p>
+                            </div>
+                            {isRmkLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            ) : (
+                                <Switch
+                                    checked={rmkEnabled}
+                                    onCheckedChange={setRmkEnabled}
+                                    disabled={isRmkLoading}
+                                />
                             )}
                         </div>
                     </div>

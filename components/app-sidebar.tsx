@@ -29,7 +29,7 @@ const navigation = [
   { name: "CRM/Kanban", href: "/crm", icon: FolderKanban },
   { name: "Atendimento", href: "/atendimento", icon: MessageSquare },
   { name: "Disparos", href: "/campanhas", icon: Megaphone },
-  { name: "Remarketing", href: "#", icon: Target, locked: true },
+  { name: "Remarketing", href: "/remarketing", icon: Target },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
   { name: "Automações", href: "/automacoes", icon: Webhook },
   { name: "Gatilhos", href: "/gatilhos", icon: Zap },

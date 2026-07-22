@@ -7,7 +7,8 @@ import { toast } from "sonner"
 import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
-  ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic, Zap, Filter, CalendarClock
+  ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic, Zap, Filter, CalendarClock,
+  UserX, UserCheck, Power
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -275,6 +276,10 @@ export default function AtendimentoPage() {
   const [availableSignatures, setAvailableSignatures] = useState<string[]>([])
   const [activeSignature, setActiveSignature] = useState<string>("")
   const [newSignature, setNewSignature] = useState("")
+
+  // RMK State
+  const [rmkEnabled, setRmkEnabled] = useState(true)
+  const [isRmkLoading, setIsRmkLoading] = useState(false)
 
   // Sidebar do Contato
   const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(false)
@@ -589,6 +594,66 @@ export default function AtendimentoPage() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
   useEffect(() => { if (selectedConv) setTimeout(() => inputRef.current?.focus(), 100) }, [selectedConv])
+
+  // ---- RMK Functions ----
+  useEffect(() => {
+    if (!selectedConv?.lead_id) {
+        setRmkEnabled(true)
+        return
+    }
+    const fetchRmkState = async () => {
+        setIsRmkLoading(true)
+        try {
+            const { data, error } = await supabase
+                .from('remarketing_leads')
+                .select('rmk_enabled')
+                .eq('lead_id', selectedConv.lead_id)
+                .maybeSingle()
+            if (!error && data) {
+                setRmkEnabled(data.rmk_enabled !== false)
+            } else {
+                setRmkEnabled(true)
+            }
+        } catch (err) {
+            console.error("Erro ao buscar RMK:", err)
+        } finally {
+            setIsRmkLoading(false)
+        }
+    }
+    fetchRmkState()
+  }, [selectedConv?.lead_id])
+
+  const handleToggleRmk = async () => {
+    if (!selectedConv?.lead_id) return
+    setIsRmkLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id) throw new Error("Não autenticado")
+      
+      const newEnabled = !rmkEnabled
+      const rmkPayload: any = {
+        lead_id: selectedConv.lead_id,
+        user_id: session.user.id,
+        rmk_enabled: newEnabled,
+      }
+      if (newEnabled) {
+        rmkPayload.remarketing_status = "none"
+        rmkPayload.remarketing_attempts = 0
+        rmkPayload.last_remarketing_at = new Date().toISOString()
+      }
+      
+      const { error } = await supabase.from('remarketing_leads').upsert(rmkPayload, { onConflict: "lead_id" })
+      if (error) throw error
+      
+      setRmkEnabled(newEnabled)
+      toast.success(newEnabled ? "RMK ativado para o lead" : "RMK desativado para o lead")
+    } catch (err: any) {
+      console.error(err)
+      toast.error("Erro ao alterar RMK")
+    } finally {
+      setIsRmkLoading(false)
+    }
+  }
 
   // ---- Lead Sidebar Functions ----
   const fetchLeadDetails = useCallback(async () => {
@@ -1544,6 +1609,24 @@ export default function AtendimentoPage() {
                       </div>
                     </PopoverContent>
                   </Popover>
+
+                  {selectedConv.lead_id && (
+                    <button
+                      onClick={handleToggleRmk}
+                      disabled={isRmkLoading}
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-medium transition-colors px-2 md:px-3 py-1.5 rounded-lg border",
+                        !rmkEnabled
+                          ? "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20"
+                          : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20",
+                        isRmkLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                      title={rmkEnabled ? "Desativar Remarketing Automático" : "Ativar Remarketing Automático"}
+                    >
+                      {isRmkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (!rmkEnabled ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />)}
+                      <span className="hidden sm:inline">{!rmkEnabled ? "RMK Pausado" : "RMK Ativo"}</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={handleToggleIAPause}

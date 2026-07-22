@@ -212,8 +212,8 @@ async function handleIncomingMessage(token: string, body: any) {
       messageId = body.messageId || body.id || `n8n_${Date.now()}`
     }
 
-    if (!senderPhone || (!messageContent && !body.data?.message) || fromMe) {
-      console.log("Skipping: fromMe or missing data")
+    if (!senderPhone || (!messageContent && !body.data?.message)) {
+      console.log("Skipping: missing data")
       return
     }
 
@@ -345,9 +345,9 @@ async function handleIncomingMessage(token: string, body: any) {
       conversation_id: conversation.id,
       user_id: userId,
       content: messageContent,
-      from_me: false,
+      from_me: fromMe,
       whatsapp_message_id: messageId,
-      status: 'received',
+      status: fromMe ? 'sent' : 'received',
       lead_id: leadId,
     })
 
