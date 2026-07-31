@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { DragDropContext, DropResult, Droppable, Draggable } from "@hello-pangea/dnd"
 import { KanbanColumn } from "./kanban-column"
 import { Column, Label as KanbanLabel } from "@/types/kanban"
@@ -70,6 +70,65 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
     const [pasteData, setPasteData] = useState("")
     const [isImporting, setIsImporting] = useState(false)
 
+    const [isDraggingLead, setIsDraggingLead] = useState(false)
+    const scrollContainerRef = useRef<HTMLDivElement>(null)
+    const mousePos = useRef({ x: 0, y: 0 })
+
+    // Track mouse position globally
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            mousePos.current = { x: e.clientX, y: e.clientY }
+        }
+        const handleTouchMove = (e: TouchEvent) => {
+            if (e.touches.length > 0) {
+                mousePos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+            }
+        }
+        
+        window.addEventListener('mousemove', handleMouseMove)
+        window.addEventListener('touchmove', handleTouchMove, { passive: true })
+        
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove)
+            window.removeEventListener('touchmove', handleTouchMove)
+        }
+    }, [])
+
+    // Smooth auto-scroll loop
+    useEffect(() => {
+        if (!isDraggingLead) return;
+
+        let animationFrameId: number;
+        
+        const scrollLoop = () => {
+            if (scrollContainerRef.current) {
+                const container = scrollContainerRef.current;
+                const rect = container.getBoundingClientRect();
+                const edgeSize = 150; // Increased edge size for easier triggering
+                const x = mousePos.current.x;
+
+                let speed = 0;
+                // Only scroll if we have a valid mouse position (x > 0)
+                if (x > 0 && x < rect.left + edgeSize) {
+                    speed = -15; // Scroll left
+                } else if (x > 0 && x > rect.right - edgeSize) {
+                    speed = 15;  // Scroll right
+                }
+
+                if (speed !== 0) {
+                    container.scrollLeft += speed;
+                }
+            }
+            animationFrameId = requestAnimationFrame(scrollLoop);
+        };
+
+        scrollLoop();
+
+        return () => {
+            cancelAnimationFrame(animationFrameId);
+        };
+    }, [isDraggingLead]);
+
 
 
     // Supabase client imported from @/lib/supabase
@@ -103,7 +162,14 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
 
     // --- Handlers ---
 
+    const onDragStart = (start: any) => {
+        if (start.type === 'lead') {
+            setIsDraggingLead(true)
+        }
+    }
+
     const onDragEnd = async (result: DropResult) => {
+        setIsDraggingLead(false)
         console.log("DND Result:", result)
         const { destination, source, draggableId, type } = result
 
@@ -757,8 +823,10 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
             </div>
 
             {/* Board Area */}
-            <DragDropContext onDragEnd={onDragEnd}>
-                <div className="w-full h-full overflow-x-auto overflow-y-auto pb-6 custom-scrollbar select-none">
+            <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
+                <div 
+                    ref={scrollContainerRef}
+                    className="w-full h-full overflow-x-auto overflow-y-auto pb-6 custom-scrollbar select-none">
                     <Droppable droppableId="board" type="column" direction="horizontal">
                         {(provided) => (
                             <div
