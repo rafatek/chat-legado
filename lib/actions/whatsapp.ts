@@ -48,6 +48,26 @@ export async function deleteWhatsappInstance(instanceName: string) {
         throw new Error("Usuário não autenticado")
     }
 
+    // 🔒 Proteção IDOR: Checa se a instância pertence ao usuário logado ou se ele é Admin
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+
+    if (!profile?.is_admin) {
+        const { data: conn } = await supabase
+            .from('whatsapp_connections')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('instance_name', instanceName)
+            .single()
+
+        if (!conn) {
+            throw new Error("Acesso negado: você não tem permissão para deletar esta instância.")
+        }
+    }
+
     // Tentativa 1: Path atualizado
     try {
         await fetch(`${UAZAPI_URL}/instance/${instanceName}`, {

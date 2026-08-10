@@ -170,8 +170,44 @@ export function KanbanBoard({ initialColumns, availableLabels = [] }: KanbanBoar
 
     const onDragEnd = async (result: DropResult) => {
         setIsDraggingLead(false)
-        console.log("DND Result:", result)
-        const { destination, source, draggableId, type } = result
+        console.log("DND Result (Original):", result)
+        let { destination, source, draggableId, type } = result
+
+        // --- HACK / WORKAROUND ---
+        // react-beautiful-dnd explicitly ignores horizontal scroll events when dragging a vertical item.
+        // Therefore, when the container scrolls, the library thinks columns are still in their original positions.
+        // We override the destination by querying the DOM directly at the mouse coordinates!
+        if (type === 'lead' && mousePos.current.x > 0) {
+            const elements = document.elementsFromPoint(mousePos.current.x, mousePos.current.y);
+            const columnEl = elements.find(el => el.hasAttribute('data-column-id'));
+            
+            if (columnEl) {
+                const realColumnId = columnEl.getAttribute('data-column-id');
+                if (realColumnId) {
+                    const cardEl = elements.find(el => el.hasAttribute('data-card-index'));
+                    let realIndex = 0;
+                    
+                    if (cardEl) {
+                        realIndex = parseInt(cardEl.getAttribute('data-card-index') || '0', 10);
+                        const rect = cardEl.getBoundingClientRect();
+                        // If mouse is in the bottom half of the card, insert AFTER it
+                        if (mousePos.current.y > rect.top + rect.height / 2) {
+                            realIndex += 1;
+                        }
+                    } else {
+                        // Mouse is in the column but not over any specific card. Place at the end.
+                        const colIndex = columns.findIndex(c => c.id === realColumnId);
+                        if (colIndex !== -1) {
+                            realIndex = columns[colIndex].leads.length;
+                        }
+                    }
+
+                    destination = { droppableId: realColumnId, index: realIndex };
+                    console.log("DND Result (Overridden by DOM query):", destination);
+                }
+            }
+        }
+        // --- FIM DO WORKAROUND ---
 
         if (!destination || (destination.droppableId === source.droppableId && destination.index === source.index)) {
             return

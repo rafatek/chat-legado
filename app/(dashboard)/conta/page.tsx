@@ -38,7 +38,7 @@ export default function ContaPage() {
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('full_name, whatsapp')
           .eq('id', user.id)
           .single()
 

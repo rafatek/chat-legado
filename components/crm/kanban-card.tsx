@@ -257,6 +257,7 @@ export function KanbanCard({ lead, index, availableLabels = [] }: KanbanCardProp
                         ref={provided.innerRef}
                         {...provided.draggableProps}
                         {...provided.dragHandleProps}
+                        data-card-index={snapshot.isDragging ? undefined : index}
                         className={`
                 group relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 
                 shadow-sm transition-all hover:border-primary/50 hover:shadow-md

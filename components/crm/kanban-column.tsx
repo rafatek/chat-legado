@@ -53,7 +53,7 @@ export function KanbanColumn({ column, onDelete, onRename, availableLabels = [],
     }, 0)
 
     return (
-        <div className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
+        <div data-column-id={column.id} className="flex flex-col w-[350px] min-w-[350px] flex-shrink-0 h-full max-h-full">
             {/* Column Header */}
             <div className="flex items-center justify-between p-4 mb-2 rounded-lg bg-card border border-border group">
                 <div className="flex flex-col gap-1.5 flex-1 mr-2">

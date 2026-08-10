@@ -32,6 +32,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes (conversation_id, contact_phone, content ou media_url)' }, { status: 400 })
     }
 
+    // 3.5. Verificar que a conversa pertence ao usuário (Segurança / IDOR)
+    const { data: convData, error: convCheckErr } = await supabaseAdmin
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', conversation_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (convCheckErr || !convData) {
+      return NextResponse.json({ error: 'Conversa não encontrada ou sem permissão' }, { status: 404 })
+    }
+
     // 4. Busca a conexão WhatsApp do usuário
     const { data: connection, error: connErr } = await supabaseAdmin
       .from('whatsapp_connections')
@@ -123,12 +135,7 @@ export async function POST(req: NextRequest) {
 
     const messageId = uazData?.key?.id || uazData?.id || uazData?.messageId || null
 
-    // 8. Buscar o lead_id da conversa
-    const { data: convData } = await supabaseAdmin
-      .from('conversations')
-      .select('lead_id')
-      .eq('id', conversation_id)
-      .single()
+    // 8. O lead_id já foi buscado no passo 3.5
 
     // 9. Salva a mensagem no banco
     const { data: message, error: msgError } = await supabaseAdmin

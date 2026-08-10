@@ -54,11 +54,12 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Nenhuma conexão WhatsApp encontrada' }, { status: 400 })
     }
 
-    // 5. Buscar o telefone do contato na conversa
+    // 5. Buscar o telefone do contato na conversa (garantindo que pertence ao usuário)
     const { data: conv } = await supabaseAdmin
       .from('conversations')
       .select('contact_phone')
       .eq('id', conversation_id)
+      .eq('user_id', user.id)
       .single()
 
     if (!conv?.contact_phone) {
@@ -141,11 +142,12 @@ export async function DELETE(req: NextRequest) {
       console.warn('[delete-message] Sem whatsapp_message_id — só remove do banco local')
     }
 
-    // 8. Remove a mensagem do banco de dados
+    // 8. Remove a mensagem do banco de dados (garantindo isolamento por usuário)
     const { error: deleteErr } = await supabaseAdmin
       .from('messages')
       .delete()
       .eq('id', message_id)
+      .eq('user_id', user.id)
 
     if (deleteErr) {
       console.error('[delete-message] Erro ao apagar mensagem do banco:', deleteErr.message)

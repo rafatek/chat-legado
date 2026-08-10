@@ -168,10 +168,26 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
             return
         }
 
+        let mediaType = 'document'
+        if (file.type.startsWith('image/')) mediaType = 'image'
+        else if (file.type.startsWith('video/')) mediaType = 'video'
+
+        if (mediaType !== 'image' && mediaType !== 'video') {
+            toast.error("Apenas imagens e vídeos são permitidos para campanhas.")
+            return
+        }
+
         setIsUploadingMedia(true)
         try {
-            const fileExt = file.name.split('.').pop()
-            const fileName = `campaigns/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+            const rawExt = file.name.split('.').pop()?.toLowerCase() || ''
+            const cleanExt = rawExt.replace(/[^a-z0-9]/g, '')
+            const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'avi']
+            if (!allowedExts.includes(cleanExt)) {
+                toast.error("Extensão de mídia não suportada.")
+                return
+            }
+
+            const fileName = `campaigns/${Date.now()}-${Math.random().toString(36).substring(2)}.${cleanExt}`
 
             const { error: uploadError } = await supabase.storage
                 .from('chat_media')
@@ -186,15 +202,6 @@ export function CampaignSheet({ open, onOpenChange, onSuccess, campaignToEdit }:
             }
 
             const { data: { publicUrl } } = supabase.storage.from('chat_media').getPublicUrl(fileName)
-
-            let mediaType = 'document'
-            if (file.type.startsWith('image/')) mediaType = 'image'
-            else if (file.type.startsWith('video/')) mediaType = 'video'
-
-            if (mediaType !== 'image' && mediaType !== 'video') {
-                toast.error("Apenas imagens e vídeos são permitidos para campanhas.")
-                return
-            }
 
             form.setValue("link_midia", publicUrl)
             form.setValue("tipo_midia", mediaType)

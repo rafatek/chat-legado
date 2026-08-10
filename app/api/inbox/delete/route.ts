@@ -29,6 +29,18 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes' }, { status: 400 })
     }
 
+    // 2.5. Verificar se a mensagem pertence ao usuário (IDOR Check)
+    const { data: msgCheck, error: msgCheckErr } = await supabaseAdmin
+      .from('messages')
+      .select('id, user_id')
+      .eq('id', message_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (msgCheckErr || !msgCheck) {
+      return NextResponse.json({ error: 'Mensagem não encontrada ou sem permissão' }, { status: 404 })
+    }
+
     const { data: connection, error: connErr } = await supabaseAdmin
       .from('whatsapp_connections')
       .select('instance_key, instance_name')

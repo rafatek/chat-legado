@@ -943,10 +943,19 @@ export default function AtendimentoPage() {
       return
     }
 
+    // Validação rígida de extensões permitidas (Allowlist de segurança)
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mp3', 'ogg', 'wav', 'm4a', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip']
+    const rawExt = file.name.split('.').pop()?.toLowerCase() || ''
+    const cleanExt = rawExt.replace(/[^a-z0-9]/g, '')
+
+    if (!allowedExtensions.includes(cleanExt)) {
+      toast.error("Tipo de arquivo não permitido. Envie apenas imagens, vídeos, áudios ou documentos padrão.")
+      return
+    }
+
     setIsUploading(true)
     try {
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${selectedConv.id}/${Math.random().toString(36).substring(2)}.${fileExt}`
+      const fileName = `${selectedConv.id}/${Math.random().toString(36).substring(2)}.${cleanExt}`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('chat_media')

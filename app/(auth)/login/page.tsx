@@ -105,13 +105,26 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsError(false)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
+      if (error) {
+        console.error("Erro ao autenticar:", error.message)
+        setIsError(true)
+        setTimeout(() => setIsError(false), 2000)
+        return
+      }
+
+      router.refresh()
+      router.push("/dashboard")
+    } catch (error) {
+      console.error("Erro inesperado:", error)
       setIsError(true)
       setTimeout(() => setIsError(false), 2000)
-    } else {
-      router.refresh()
-      setTimeout(() => router.push("/dashboard"), 500)
     }
   }
 

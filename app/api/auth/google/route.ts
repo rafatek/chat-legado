@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { createClient } from '@/lib/supabase-server'
+import crypto from 'crypto'
 
 export async function GET(request: Request) {
     const url = new URL(request.url)
@@ -27,11 +28,16 @@ export async function GET(request: Request) {
         'https://www.googleapis.com/auth/userinfo.email',
     ]
 
+    // 🔒 Assinar o state com HMAC para impedir manipulação de user_id (IDOR)
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret'
+    const signature = crypto.createHmac('sha256', secret).update(user.id).digest('hex')
+    const signedState = `${user.id}.${signature}`
+
     const authorizationUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline', // Gets refresh token
         scope: scopes,
         prompt: 'consent', // Forces consent screen to always get refresh token
-        state: user.id // Passa o user_id no state para não perder no callback
+        state: signedState
     })
 
     return NextResponse.redirect(authorizationUrl)

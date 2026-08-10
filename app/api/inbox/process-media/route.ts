@@ -6,6 +6,55 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Helper para validar URLs contra SSRF (Server-Side Request Forgery)
+function isSafeUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl)
+    // Aceitar apenas HTTP/HTTPS
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false
+    }
+
+    const hostname = parsed.hostname.toLowerCase()
+
+    // Sempre bloquear metadados de nuvem (AWS/GCP/Azure/DigitalOcean)
+    const cloudMetadataHosts = [
+      '169.254.169.254',
+      'metadata.google.internal',
+      'instance-data',
+    ]
+
+    if (cloudMetadataHosts.includes(hostname)) {
+      return false
+    }
+
+    // Em ambiente de desenvolvimento local (npm run dev), permitir localhost/IPs de teste
+    if (process.env.NODE_ENV === 'development') {
+      return true
+    }
+
+    // Em produção: Bloquear localhost, loopbacks e redes locais
+    const blockedHosts = ['localhost', '127.0.0.1', '::1', '0.0.0.0']
+    if (blockedHosts.includes(hostname)) {
+      return false
+    }
+
+    // Bloquear faixas de IP privadas (10.x.x.x, 192.168.x.x, 172.16-31.x.x, 127.x.x.x)
+    if (
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+      /^127\./.test(hostname)
+    ) {
+      return false
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json()
@@ -15,6 +64,12 @@ export async function POST(req: NextRequest) {
 
     if (!BaseUrl || !message || !token) {
       return NextResponse.json({ error: 'Faltando BaseUrl, token ou message no payload.' }, { status: 400 })
+    }
+
+    // Validação Anti-SSRF da BaseUrl
+    if (!isSafeUrl(BaseUrl)) {
+      console.error('[process-media] Tentativa de SSRF bloqueada para BaseUrl:', BaseUrl)
+      return NextResponse.json({ error: 'URL da UazAPI inválida ou não permitida.' }, { status: 400 })
     }
 
     console.log(`[process-media] Processando mídia recebida para a instância ${instanceName || 'N/A'}`)
@@ -40,6 +95,12 @@ export async function POST(req: NextRequest) {
     if (!uazData.fileURL) {
       console.error('[process-media] UazAPI não retornou a fileURL:', uazData)
       return NextResponse.json({ error: 'fileURL não encontrado na resposta da UazAPI' }, { status: 400 })
+    }
+
+    // Validação Anti-SSRF da fileURL
+    if (!isSafeUrl(uazData.fileURL)) {
+      console.error('[process-media] Tentativa de SSRF bloqueada para fileURL:', uazData.fileURL)
+      return NextResponse.json({ error: 'fileURL insegura retornada pela UazAPI.' }, { status: 400 })
     }
 
     // 2. Fazer o download do arquivo binário da UazAPI

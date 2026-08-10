@@ -28,13 +28,12 @@ interface AgendamentoConfigSheetProps {
 export function AgendamentoConfigSheet({ open, onOpenChange }: AgendamentoConfigSheetProps) {
     const [loading, setLoading] = useState(false)
     const [fetching, setFetching] = useState(true)
+    const [isGoogleConnected, setIsGoogleConnected] = useState(false)
     const router = useRouter()
 
     const [config, setConfig] = useState<AgendamentoConfig>({
         is_active: false,
-        prompt_agendamento: '',
-        google_access_token: '',
-        google_refresh_token: ''
+        prompt_agendamento: ''
     })
 
     useEffect(() => {
@@ -51,7 +50,7 @@ export function AgendamentoConfigSheet({ open, onOpenChange }: AgendamentoConfig
 
             const { data, error } = await supabase
                 .from('agents_agendamento_config')
-                .select('*')
+                .select('is_active, prompt_agendamento, google_token_expiry, google_refresh_token')
                 .eq('user_id', user.id)
                 .single()
 
@@ -61,14 +60,17 @@ export function AgendamentoConfigSheet({ open, onOpenChange }: AgendamentoConfig
             }
 
             if (data) {
-                setConfig(data)
+                setConfig({
+                    is_active: data.is_active || false,
+                    prompt_agendamento: data.prompt_agendamento || ''
+                })
+                setIsGoogleConnected(Boolean(data.google_refresh_token || data.google_token_expiry))
             } else {
                 setConfig({
                     is_active: false,
-                    prompt_agendamento: '',
-                    google_access_token: '',
-                    google_refresh_token: ''
+                    prompt_agendamento: ''
                 })
+                setIsGoogleConnected(false)
             }
         } catch (err) {
             console.error(err)
@@ -114,7 +116,7 @@ export function AgendamentoConfigSheet({ open, onOpenChange }: AgendamentoConfig
         window.location.href = '/api/auth/google'
     }
 
-    const isConnected = !!config.google_refresh_token
+    const isConnected = isGoogleConnected
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
