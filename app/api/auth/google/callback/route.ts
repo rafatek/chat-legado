@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     const code = url.searchParams.get('code')
     const state = url.searchParams.get('state') // Formato esperado: userId.signature
-    const host = url.origin
+    const host = process.env.NEXT_PUBLIC_APP_URL || url.origin
 
     if (!code) {
         return NextResponse.json({ error: 'Code not found' }, { status: 400 })

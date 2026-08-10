@@ -5,7 +5,7 @@ import crypto from 'crypto'
 
 export async function GET(request: Request) {
     const url = new URL(request.url)
-    const host = url.origin // e.g. http://localhost:3000
+    const host = process.env.NEXT_PUBLIC_APP_URL || url.origin // Garante que a URL base venha da env em produção
 
     // Pegar o usuário atual da sessão
     const supabase = await createClient()
