@@ -1978,7 +1978,7 @@ export default function AtendimentoPage() {
                         onKeyDown={handleKeyDown}
                         placeholder="Digite uma mensagem..."
                         rows={1}
-                        className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600 outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
+                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
                         style={{ minHeight: '32px', maxHeight: '120px' }}
                         onInput={(e) => {
                           const target = e.target as HTMLTextAreaElement;

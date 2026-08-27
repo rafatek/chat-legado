@@ -24,6 +24,16 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,6 +113,12 @@ export default function RemarketingPage() {
   const [searchResults, setSearchResults] = useState<SearchResultLead[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [togglingLeadId, setTogglingLeadId] = useState<string | null>(null)
+
+  // ── Bulk Actions State ───────────────────────────────────────────────────────
+  const [isEnablingAll, setIsEnablingAll] = useState(false)
+  const [isDisablingAll, setIsDisablingAll] = useState(false)
+  const [showEnableAllConfirm, setShowEnableAllConfirm] = useState(false)
+  const [showDisableAllConfirm, setShowDisableAllConfirm] = useState(false)
 
   // ── Fetch user ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -292,6 +308,116 @@ export default function RemarketingPage() {
       toast.error("Erro ao alterar: " + err.message)
     } finally {
       setTogglingLeadId(null)
+    }
+  }
+
+  // ── Enable All Leads ─────────────────────────────────────────────────────────
+  const handleEnableAll = async () => {
+    if (!userId) return
+    setIsEnablingAll(true)
+    try {
+      // Busca apenas leads desativados manualmente, excluindo optout e convertidos
+      const { data: toEnable, error } = await supabase
+        .from('remarketing_leads')
+        .select('lead_id')
+        .eq('user_id', userId)
+        .eq('rmk_enabled', false)
+        .not('remarketing_status', 'in', '(optout,converted)')
+
+      if (error) throw error
+
+      if (!toEnable || toEnable.length === 0) {
+        toast.info('Nenhum lead desativado para reativar.')
+        setShowEnableAllConfirm(false)
+        return
+      }
+
+      const payload = toEnable.map((r: any) => ({
+        lead_id: r.lead_id,
+        user_id: userId,
+        rmk_enabled: true,
+        remarketing_status: 'none',
+        remarketing_attempts: 0,
+        last_remarketing_at: null,
+      }))
+
+      const { error: upsertError } = await supabase
+        .from('remarketing_leads')
+        .upsert(payload, { onConflict: 'lead_id' })
+
+      if (upsertError) throw upsertError
+
+      toast.success(`RMK ativado para ${payload.length} lead(s)!`)
+      if (userId) fetchStats(userId)
+      setSearchResults([])
+      setSearchQuery('')
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Erro ao ativar: ' + err.message)
+    } finally {
+      setIsEnablingAll(false)
+      setShowEnableAllConfirm(false)
+    }
+  }
+
+  // ── Disable All Leads ────────────────────────────────────────────────────────
+  const handleDisableAll = async () => {
+    if (!userId) return
+    setIsDisablingAll(true)
+    try {
+      // 1. Desativa todas as linhas existentes na tabela
+      const { error: updateError } = await supabase
+        .from('remarketing_leads')
+        .update({ rmk_enabled: false })
+        .eq('user_id', userId)
+
+      if (updateError) throw updateError
+
+      // 2. Busca todos os leads do usuário
+      const { data: allLeads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('user_id', userId)
+
+      if (leadsError) throw leadsError
+
+      // 3. Busca os que já têm linha (após a atualização acima)
+      const { data: existing, error: existingError } = await supabase
+        .from('remarketing_leads')
+        .select('lead_id')
+        .eq('user_id', userId)
+
+      if (existingError) throw existingError
+
+      // 4. Insere linhas desativadas para leads que ainda não tinham registro
+      const existingIds = new Set((existing || []).map((r: any) => r.lead_id))
+      const toInsert = (allLeads || [])
+        .filter((l: any) => !existingIds.has(l.id))
+        .map((l: any) => ({
+          lead_id: l.id,
+          user_id: userId,
+          rmk_enabled: false,
+          remarketing_status: 'none',
+          remarketing_attempts: 0,
+        }))
+
+      if (toInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from('remarketing_leads')
+          .insert(toInsert)
+        if (insertError) throw insertError
+      }
+
+      toast.success('RMK desativado para todos os leads!')
+      if (userId) fetchStats(userId)
+      setSearchResults([])
+      setSearchQuery('')
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Erro ao desativar: ' + err.message)
+    } finally {
+      setIsDisablingAll(false)
+      setShowDisableAllConfirm(false)
     }
   }
 
@@ -579,6 +705,40 @@ export default function RemarketingPage() {
             </p>
           </div>
 
+          {/* Ações em Massa */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-accent/20 border border-border rounded-xl">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground mb-0.5">Ações em Massa</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Afeta todos os leads, exceto os com{" "}
+                <span className="text-red-400 font-medium">opt-out</span> ou{" "}
+                <span className="text-emerald-400 font-medium">convertidos</span>.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <Button
+                onClick={() => setShowEnableAllConfirm(true)}
+                disabled={isEnablingAll || isDisablingAll}
+                variant="outline"
+                size="sm"
+                className="gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:border-emerald-500/60 hover:text-emerald-400"
+              >
+                {isEnablingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                Ligar para Todos
+              </Button>
+              <Button
+                onClick={() => setShowDisableAllConfirm(true)}
+                disabled={isEnablingAll || isDisablingAll}
+                variant="outline"
+                size="sm"
+                className="gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/60 hover:text-red-400"
+              >
+                {isDisablingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
+                Desligar para Todos
+              </Button>
+            </div>
+          </div>
+
           {/* Search input */}
           <div className="flex gap-3">
             <div className="relative flex-1">
@@ -659,6 +819,57 @@ export default function RemarketingPage() {
         </div>
 
       </div>
+
+      {/* ── Modal: Confirmar Ligar Todos ────────────────────────────────────── */}
+      <AlertDialog open={showEnableAllConfirm} onOpenChange={setShowEnableAllConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ligar RMK para Todos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O remarketing será <strong>ativado</strong> para todos os leads que foram desativados manualmente.
+              Leads com status <strong>opt-out</strong> ou <strong>convertido</strong> serão ignorados.
+              A contagem de tentativas será reiniciada para os leads reativados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isEnablingAll}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleEnableAll}
+              disabled={isEnablingAll}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+            >
+              {isEnablingAll && <Loader2 className="h-4 w-4 animate-spin" />}
+              Sim, ligar para todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Modal: Confirmar Desligar Todos ─────────────────────────────────── */}
+      <AlertDialog open={showDisableAllConfirm} onOpenChange={setShowDisableAllConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desligar RMK para Todos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O remarketing será <strong>desativado</strong> para todos os leads sem exceção.
+              Nenhum lead receberá mensagens automáticas até ser reativado individualmente
+              ou pelo botão "Ligar para Todos".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDisablingAll}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDisableAll}
+              disabled={isDisablingAll}
+              className="bg-red-600 hover:bg-red-700 text-white gap-2"
+            >
+              {isDisablingAll && <Loader2 className="h-4 w-4 animate-spin" />}
+              Sim, desligar para todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   )
 }
