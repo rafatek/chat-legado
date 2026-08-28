@@ -12,10 +12,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Bot, MessageSquare, Megaphone, Settings2, Power, Loader2, Calendar } from "lucide-react"
+import { Bot, MessageSquare, Megaphone, Settings2, Power, Loader2, Calendar, Sparkles } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { AtendimentoConfigSheet } from "@/components/agents/atendimento-config-sheet"
 import { AgendamentoConfigSheet } from "@/components/agents/agendamento-config-sheet"
+import { AssistenteConfigSheet } from "@/components/agents/assistente-config-sheet"
 
 // Type for card summary data
 interface AgentSummary {
@@ -26,11 +27,12 @@ interface AgentSummary {
 export default function AgentsHubPage() {
   const [isAtendimentoSheetOpen, setIsAtendimentoSheetOpen] = useState(false)
   const [isAgendamentoSheetOpen, setIsAgendamentoSheetOpen] = useState(false)
-  
+  const [isAssistenteSheetOpen, setIsAssistenteSheetOpen] = useState(false)
 
   // Local state for dashboard cards (to show active status without opening sheet)
   const [atendimentoSummary, setAtendimentoSummary] = useState<AgentSummary | null>(null)
   const [agendamentoSummary, setAgendamentoSummary] = useState<AgentSummary | null>(null)
+  const [assistenteSummary, setAssistenteSummary] = useState<AgentSummary | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchSummaries = async () => {
@@ -65,6 +67,20 @@ export default function AgentsHubPage() {
           agent_name: "Agente de Agendamento"
         })
       }
+
+      // Fetch assistente status
+      const { data: assistenteData } = await supabase
+        .from('agents_assist')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .single()
+
+      if (assistenteData) {
+        setAssistenteSummary({
+          is_active: assistenteData.is_active,
+          agent_name: "Assistente de Mensagem"
+        })
+      }
     } catch (error) {
       console.error("Error fetching summaries", error)
     } finally {
@@ -74,7 +90,7 @@ export default function AgentsHubPage() {
 
   useEffect(() => {
     fetchSummaries()
-  }, [isAtendimentoSheetOpen, isAgendamentoSheetOpen]) // Re-fetch when sheet closes to update status
+  }, [isAtendimentoSheetOpen, isAgendamentoSheetOpen, isAssistenteSheetOpen]) // Re-fetch when sheet closes to update status
 
   return (
     <div className="space-y-8 p-6">
@@ -179,6 +195,50 @@ export default function AgentsHubPage() {
           </CardFooter>
         </Card>
 
+        {/* === CARD ASSISTENTE DE MENSAGEM === */}
+        <Card className="relative overflow-hidden border-emerald-500/20 bg-gradient-to-b from-card to-card/50 transition-all hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/5">
+          <div className="absolute top-0 right-0 p-4">
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              <Badge variant={assistenteSummary?.is_active ? "default" : "secondary"} className={assistenteSummary?.is_active ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" : ""}>
+                {assistenteSummary?.is_active ? "Ativo" : "Pausado"}
+              </Badge>
+            )}
+          </div>
+
+          <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle>Assistente de Mensagem</CardTitle>
+              <CardDescription className="line-clamp-2">
+                Auxilia na composição inteligente, reescrita e sugestões de respostas.
+              </CardDescription>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-emerald-400" />
+                <span>Copiloto de Chat</span>
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter>
+            <Button
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-900/20"
+              onClick={() => setIsAssistenteSheetOpen(true)}
+            >
+              <Settings2 className="mr-2 h-4 w-4" />
+              Configurar Agente
+            </Button>
+          </CardFooter>
+        </Card>
+
       </div>
 
       {/* Sheets / Modals */}
@@ -189,6 +249,10 @@ export default function AgentsHubPage() {
       <AgendamentoConfigSheet
         open={isAgendamentoSheetOpen}
         onOpenChange={setIsAgendamentoSheetOpen}
+      />
+      <AssistenteConfigSheet
+        open={isAssistenteSheetOpen}
+        onOpenChange={setIsAssistenteSheetOpen}
       />
     </div>
   )

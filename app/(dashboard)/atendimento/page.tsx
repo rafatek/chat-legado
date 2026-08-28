@@ -8,7 +8,7 @@ import {
   Send, MessageSquare, Search, Loader2, CheckCheck, Check, Clock,
   ArrowLeft, Phone, Circle, Plus, X, UserPlus, Paperclip, Bot, BotOff, PenTool,
   ChevronRight, DollarSign, FileText, User, Trash2, ChevronDown, Mic, Zap, Filter, CalendarClock,
-  UserX, UserCheck, Power
+  UserX, UserCheck, Power, Sparkles, Copy, RefreshCw, Wand2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -378,6 +378,9 @@ export default function AtendimentoPage() {
     setIsLoadingConvs(false)
   }, [userId])
 
+  // Assistente de Mensagem State
+  const [assistenteConfig, setAssistenteConfig] = useState<{ is_active: boolean; prompt?: string } | null>(null)
+
   const loadLabels = useCallback(async () => {
     if (!userId) return
     const { data } = await supabase.from('labels').select('*').eq('user_id', userId)
@@ -390,9 +393,141 @@ export default function AtendimentoPage() {
     if (data) setQuickReplies(data)
   }, [userId])
 
+  const loadAssistenteConfig = useCallback(async () => {
+    if (!userId) return
+    const { data, error } = await supabase
+      .from('agents_assist')
+      .select('is_active, prompt')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (!error && data) {
+      setAssistenteConfig({
+        is_active: data.is_active || false,
+        prompt: data.prompt || ''
+      })
+    } else {
+      setAssistenteConfig(null)
+    }
+  }, [userId])
+
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => { loadLabels() }, [loadLabels])
   useEffect(() => { loadQuickReplies() }, [loadQuickReplies])
+
+  // Realtime: Assistente de Mensagem
+  useEffect(() => {
+    if (!userId) return
+    loadAssistenteConfig()
+
+    const channel = supabase
+      .channel("agents_assist_realtime")
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agents_assist', filter: `user_id=eq.${userId}` },
+        (payload: any) => {
+          if (payload.new) {
+            setAssistenteConfig({
+              is_active: payload.new.is_active || false,
+              prompt: payload.new.prompt || ''
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userId, loadAssistenteConfig])
+
+  // Assistente de Mensagem: Geração de Sugestões via N8N
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [isSuggestionsDialogOpen, setIsSuggestionsDialogOpen] = useState(false)
+
+  const handleGenerateSuggestions = async () => {
+    if (!selectedConv) return
+
+    let finalLeadId = selectedConv.lead_id
+
+    // Fallback: se o lead_id não estiver no objeto local, busca no Supabase
+    if (!finalLeadId) {
+      const { data: leadData } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('conversation_id', selectedConv.id)
+        .maybeSingle()
+
+      if (leadData) {
+        finalLeadId = leadData.id
+      } else {
+        const { data: leadDataPhone } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('whatsapp', selectedConv.contact_phone)
+          .maybeSingle()
+        if (leadDataPhone) finalLeadId = leadDataPhone.id
+      }
+    }
+
+    if (!finalLeadId) {
+      toast.warning("Este contato ainda não possui registro de Lead no CRM.")
+      return
+    }
+
+    setIsGeneratingSuggestions(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        toast.error("Sessão expirada. Faça login novamente.")
+        return
+      }
+
+      const res = await fetch('/api/inbox/assist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          lead_id: finalLeadId,
+          conversation_id: selectedConv.id,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || "Erro ao obter sugestões da IA.")
+        return
+      }
+
+      if (data.suggestions && data.suggestions.length > 0) {
+        setSuggestions(data.suggestions)
+        setIsSuggestionsDialogOpen(true)
+      } else {
+        toast.warning("Nenhuma sugestão foi retornada pelo Assistente.")
+      }
+    } catch (err: any) {
+      console.error("Erro ao gerar sugestões:", err)
+      toast.error("Falha de conexão com o Assistente de IA.")
+    } finally {
+      setIsGeneratingSuggestions(false)
+    }
+  }
+
+  const handleApplySuggestion = (text: string) => {
+    setNewMessage(text)
+    setIsSuggestionsDialogOpen(false)
+    toast.success("Sugestão inserida no campo de mensagem!")
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 150)
+  }
+
+  const handleCopySuggestion = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success("Mensagem copiada para a área de transferência!")
+  }
 
   const handleSaveQuickReply = async () => {
     if (!userId || !newQuickReplyTitle.trim() || !newQuickReplyContent.trim()) return
@@ -1469,7 +1604,7 @@ export default function AtendimentoPage() {
 
         {/* ===== CHAT PANEL ===== */}
         <div className={cn(
-          "flex-1 flex flex-col min-w-0",
+          "relative flex-1 flex flex-col min-w-0",
           !isMobileView && !selectedConv ? "hidden md:flex" : "flex",
           isMobileView && !selectedConv ? "hidden" : ""
         )}>
@@ -1878,8 +2013,15 @@ export default function AtendimentoPage() {
                                       <button
                                         key={qr.id}
                                         onClick={() => {
-                                          setIsQuickRepliesMenuOpen(false);
-                                          handleSend(undefined, undefined, qr.content);
+                                          setIsQuickRepliesMenuOpen(false)
+                                          setNewMessage(qr.content)
+                                          setTimeout(() => {
+                                            if (inputRef.current) {
+                                              inputRef.current.focus()
+                                              inputRef.current.style.height = '32px'
+                                              inputRef.current.style.height = `${inputRef.current.scrollHeight}px`
+                                            }
+                                          }, 100)
                                         }}
                                         className="text-left p-2.5 rounded-lg hover:bg-white/5 transition-colors group flex flex-col gap-1"
                                       >
@@ -2012,6 +2154,33 @@ export default function AtendimentoPage() {
                 </div>
                 <p className="hidden sm:block text-[10px] text-gray-700 mt-1.5 text-center">Enter para enviar · Shift+Enter para nova linha</p>
               </div>
+
+              {/* ===== FLOATING ICON: ASSISTENTE DE MENSAGEM ===== */}
+              {assistenteConfig?.is_active && (
+                <div className="absolute bottom-20 right-6 z-30 group">
+                  <button
+                    onClick={handleGenerateSuggestions}
+                    disabled={isGeneratingSuggestions}
+                    className={cn(
+                      "relative flex items-center justify-center h-12 w-12 rounded-full bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 text-white shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-110 active:scale-95 transition-all duration-300 border border-white/20 backdrop-blur-md cursor-pointer",
+                      isGeneratingSuggestions && "opacity-80 scale-105 cursor-wait"
+                    )}
+                    title={isGeneratingSuggestions ? "Gerando sugestões..." : "Pedir sugestões ao Assistente de IA"}
+                  >
+                    {isGeneratingSuggestions ? (
+                      <Loader2 className="h-6 w-6 animate-spin text-white" />
+                    ) : (
+                      <>
+                        <Sparkles className="h-6 w-6 animate-pulse" />
+                        <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-[#0A0A0E]"></span>
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             // Empty State
@@ -2294,6 +2463,97 @@ export default function AtendimentoPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ===== DIALOG: Sugestões do Assistente de Mensagem ===== */}
+      <Dialog open={isSuggestionsDialogOpen} onOpenChange={setIsSuggestionsDialogOpen}>
+        <DialogContent className="sm:max-w-[620px] bg-card dark:bg-[#12121A] border-border dark:border-white/10 text-foreground dark:text-white p-6 shadow-2xl">
+          <DialogHeader className="space-y-1.5 pb-3 border-b border-border dark:border-white/5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-md shadow-emerald-500/20">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                  Sugestões do Assistente
+                  <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 bg-emerald-500/10 font-normal">
+                    IA
+                  </Badge>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Escolha uma das sugestões geradas para carregar na caixa de mensagem e editar antes de enviar.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            {suggestions.map((suggestion, index) => (
+              <div
+                key={index}
+                className="group relative rounded-xl border border-border dark:border-white/10 bg-accent/30 dark:bg-white/[0.03] p-4 transition-all duration-200 hover:border-emerald-500/40 hover:bg-accent/60 dark:hover:bg-white/[0.06] hover:shadow-lg hover:shadow-emerald-500/5 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Wand2 className="h-3 w-3" /> Opção {index + 1}
+                  </span>
+                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCopySuggestion(suggestion)}
+                      className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 hover:bg-white/10"
+                      title="Copiar texto"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span className="text-[11px]">Copiar</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <p className="text-sm text-foreground dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                  {suggestion}
+                </p>
+
+                <div className="pt-1 flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => handleApplySuggestion(suggestion)}
+                    className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20 gap-1.5 font-medium transition-all"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Usar no Campo de Mensagem
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-border dark:border-white/5 flex items-center justify-between sm:justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerateSuggestions}
+              disabled={isGeneratingSuggestions}
+              className="text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 gap-1.5"
+            >
+              {isGeneratingSuggestions ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              {isGeneratingSuggestions ? "Gerando novas..." : "Gerar Novamente"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSuggestionsDialogOpen(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

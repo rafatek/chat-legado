@@ -42,8 +42,10 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
   const videoUrl = TUTORIAL_LINKS[pathname] || TUTORIAL_LINKS["/dashboard"]
   const videoId = getVideoId(videoUrl)
   const [showTour, setShowTour] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     // Chave de localStorage atualizada para Legado
     const hasSeenTour = localStorage.getItem("legado_tutorial_tour_seen")
     if (!hasSeenTour) {
@@ -78,44 +80,53 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
         <div className="flex items-center gap-3">
           <ThemeToggle />
           
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button
-                className={`gap-2 bg-[#00A3FF] hover:bg-[#0082CC] text-white shadow-lg shadow-[#00A3FF]/20 transition-all hover:scale-105 
-                  ${showTour ? 'relative z-[60] ring-4 ring-[#00A3FF]/50 ring-offset-2 ring-offset-background' : ''}`}
-              >
-                <PlayCircle className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
-              </Button>
-            </DialogTrigger>
-          <DialogContent showCloseButton={false} className="sm:max-w-[800px] p-0 overflow-hidden bg-black/90 border-white/10">
-            <DialogHeader className="flex flex-row items-center justify-between p-4 absolute z-10 w-full bg-gradient-to-b from-black/80 to-transparent">
-              <DialogTitle className="text-white text-sm font-bold uppercase tracking-widest">
-                Legado <span className="text-[#00A3FF]">Academy</span>
-              </DialogTitle>
-              <DialogClose className="rounded-full p-1 hover:bg-white/10 transition-colors text-white cursor-pointer z-50">
-                <X className="h-5 w-5" />
-              </DialogClose>
-            </DialogHeader>
-            <div className="aspect-video w-full bg-black">
-              {videoId ? (
-                <iframe
-                  width="100%"
-                  height="100%"
-                  src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
-                  title="Tutorial Legado"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  className="w-full h-full"
-                />
-              ) : (
-                <div className="flex items-center justify-center w-full h-full text-zinc-400">
-                  Vídeo indisponível
+          {mounted ? (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  className={`gap-2 bg-[#00A3FF] hover:bg-[#0082CC] text-white shadow-lg shadow-[#00A3FF]/20 transition-all hover:scale-105 
+                    ${showTour ? 'relative z-[60] ring-4 ring-[#00A3FF]/50 ring-offset-2 ring-offset-background' : ''}`}
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent showCloseButton={false} className="sm:max-w-[800px] p-0 overflow-hidden bg-black/90 border-white/10">
+                <DialogHeader className="flex flex-row items-center justify-between p-4 absolute z-10 w-full bg-gradient-to-b from-black/80 to-transparent">
+                  <DialogTitle className="text-white text-sm font-bold uppercase tracking-widest">
+                    Legado <span className="text-[#00A3FF]">Academy</span>
+                  </DialogTitle>
+                  <DialogClose className="rounded-full p-1 hover:bg-white/10 transition-colors text-white cursor-pointer z-50">
+                    <X className="h-5 w-5" />
+                  </DialogClose>
+                </DialogHeader>
+                <div className="aspect-video w-full bg-black">
+                  {videoId ? (
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+                      title="Tutorial Legado"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      className="w-full h-full"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center w-full h-full text-zinc-400">
+                      Vídeo indisponível
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+              </DialogContent>
+            </Dialog>
+          ) : (
+            <Button
+              className={`gap-2 bg-[#00A3FF] hover:bg-[#0082CC] text-white shadow-lg shadow-[#00A3FF]/20 transition-all hover:scale-105`}
+            >
+              <PlayCircle className="h-4 w-4" />
+              <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Tutorial da Página</span>
+            </Button>
+          )}
         </div>
       </div>
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}

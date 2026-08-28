@@ -39,3 +39,13 @@ export interface AgendamentoConfig {
     created_at?: string
     updated_at?: string
 }
+
+export interface AssistenteConfig {
+    id?: string
+    user_id?: string
+    prompt?: string
+    is_active?: boolean
+    created_at?: string
+    updated_at?: string
+}
+

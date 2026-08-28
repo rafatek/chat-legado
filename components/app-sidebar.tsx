@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   X,
   Zap,
+  CalendarClock,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -28,6 +29,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "CRM/Kanban", href: "/crm", icon: FolderKanban },
   { name: "Atendimento", href: "/atendimento", icon: MessageSquare },
+  { name: "Agendamentos", href: "/agendamentos", icon: CalendarClock },
   { name: "Disparos", href: "/campanhas", icon: Megaphone },
   { name: "Remarketing", href: "/remarketing", icon: Target },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
