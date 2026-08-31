@@ -631,11 +631,21 @@ export default function AtendimentoPage() {
     
     const q = search.toLowerCase()
     if (q) {
-      filtered = filtered.filter(c =>
-        c.contact_name?.toLowerCase().includes(q) ||
-        c.contact_phone.includes(q) ||
-        c.last_message?.toLowerCase().includes(q)
-      )
+      // Normaliza dígitos para comparação de telefone (cobre com e sem prefixo 55)
+      const qDigits = q.replace(/\D/g, '')
+      filtered = filtered.filter(c => {
+        const phoneDigits = c.contact_phone.replace(/\D/g, '')
+        const phoneMatch = qDigits.length >= 6 && (
+          phoneDigits.includes(qDigits) ||
+          phoneDigits.includes(qDigits.replace(/^55/, '')) ||
+          (`55${phoneDigits}`).includes(qDigits)
+        )
+        return (
+          c.contact_name?.toLowerCase().includes(q) ||
+          phoneMatch ||
+          c.last_message?.toLowerCase().includes(q)
+        )
+      })
     }
     
     setFilteredConvs(filtered)
@@ -1167,11 +1177,16 @@ export default function AtendimentoPage() {
 
       // 2. Upsert do lead no CRM/Kanban — mantém tudo sincronizado
       try {
+        // Busca o lead nos dois formatos possíveis (com e sem DDI 55)
+        // para evitar duplicatas e perda de etiquetas por inconsistência de formato
+        const phoneWith55 = phone.startsWith('55') ? phone : `55${phone}`
+        const phoneWithout55 = phone.startsWith('55') ? phone.slice(2) : phone
+
         const { data: existingLead } = await supabase
           .from("leads")
           .select("id")
           .eq("user_id", userId)
-          .eq("whatsapp", phone)
+          .or(`whatsapp.eq.${phoneWith55},whatsapp.eq.${phoneWithout55}`)
           .maybeSingle()
 
         let leadIdToUse = existingLead?.id
