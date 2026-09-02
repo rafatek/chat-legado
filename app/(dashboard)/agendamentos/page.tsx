@@ -483,7 +483,8 @@ export default function AgendamentosPage() {
   }
 
   return (
-    <div className="space-y-6 p-4 md:p-8 max-w-7xl mx-auto w-full">
+    <div className="flex-1 h-full min-h-0 overflow-y-auto custom-scrollbar">
+      <div className="space-y-6 p-4 md:p-8 max-w-7xl mx-auto w-full pb-24">
       {/* ===== HEADER ===== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -965,6 +966,7 @@ export default function AgendamentosPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
     </div>
   )
 }
