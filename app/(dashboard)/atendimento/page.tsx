@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
@@ -72,6 +72,12 @@ interface Message {
   media_type?: string
 }
 
+export interface ChatInputBarHandle {
+  setText: (text: string) => void
+  focus: () => void
+  clear: () => void
+}
+
 // =============================================
 // Helpers
 // =============================================
@@ -98,7 +104,7 @@ function getAvatarColor(phone: string) {
   return AVATAR_COLORS[sum % AVATAR_COLORS.length]
 }
 
-function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; phone: string; size?: "sm" | "md" | "lg", picUrl?: string }) {
+const ContactAvatar = React.memo(function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; phone: string; size?: "sm" | "md" | "lg", picUrl?: string }) {
   const sizeClass = { sm: "h-8 w-8 text-xs", md: "h-10 w-10 text-sm", lg: "h-12 w-12 text-base" }[size]
   if (picUrl) {
     return <img src={picUrl} alt={name} className={cn("rounded-full object-cover flex-shrink-0", sizeClass)} />
@@ -108,9 +114,9 @@ function ContactAvatar({ name, phone, size = "md", picUrl }: { name: string; pho
       {getInitials(name || phone)}
     </div>
   )
-}
+})
 
-function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDelete?: (msg: Message) => void; onEdit?: (msg: Message) => void }) {
+const MessageBubble = React.memo(function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDelete?: (msg: Message) => void; onEdit?: (msg: Message) => void }) {
   const isMe = message.from_me
   const isDeleted = message.content === '[Mensagem apagada]' || message.content === '🚫 Mensagem apagada' || message.status === 'deleted'
   const [menuOpen, setMenuOpen] = useState(false)
@@ -214,7 +220,446 @@ function MessageBubble({ message, onDelete, onEdit }: { message: Message; onDele
       </div>
     </div>
   )
+})
+
+const ConversationItem = React.memo(function ConversationItem({
+  conv,
+  isSelected,
+  onSelect,
+}: {
+  conv: Conversation
+  isSelected: boolean
+  onSelect: (conv: Conversation) => void
+}) {
+  return (
+    <button
+      onClick={() => onSelect(conv)}
+      className={cn(
+        "w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-accent dark:hover:bg-white/[0.03] border-b border-border dark:border-white/[0.03]",
+        isSelected && "bg-[#00A3FF]/5 border-l-2 border-l-[#00A3FF]"
+      )}
+    >
+      <div className="relative">
+        <ContactAvatar name={conv.contact_name || conv.contact_phone} phone={conv.contact_phone} picUrl={conv.profile_pic_url} />
+        <Circle className="absolute -bottom-0.5 -right-0.5 h-3 w-3 fill-emerald-500 text-emerald-500" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className="text-sm font-semibold text-foreground dark:text-gray-100 truncate">
+            {conv.contact_name || conv.contact_phone}
+          </span>
+          <span className="text-[10px] text-gray-600 flex-shrink-0">{formatTime(conv.last_message_at)}</span>
+        </div>
+        
+        {/* Renderização das Badges/Etiquetas */}
+        {conv.labels && conv.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {conv.labels.map(label => (
+              <div 
+                key={label.id} 
+                style={{ backgroundColor: label.color }} 
+                className="text-[9px] uppercase font-bold text-white px-1.5 py-0.5 rounded-sm line-clamp-1 truncate max-w-[80px]"
+                title={label.title}
+              >
+                {label.title}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-gray-500 truncate">{conv.last_message || "..."}</p>
+          {conv.unread_count > 0 && (
+            <span className="flex-shrink-0 min-w-[18px] bg-[#00A3FF] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 h-4">
+              {conv.unread_count}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+})
+
+interface ChatInputBarProps {
+  onSend: (text: string) => Promise<void> | void
+  isSending: boolean
+  editingMessage: Message | null
+  onCancelEdit: () => void
+  activeSignature?: string
+  isRecording: boolean
+  recordingTime: number
+  startRecording: () => void
+  stopAndSendRecording: () => void
+  cancelRecording: () => void
+  isUploading: boolean
+  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
+  quickReplies: QuickReply[]
+  isManageQuickRepliesOpen: boolean
+  setIsManageQuickRepliesOpen: (open: boolean) => void
+  newQuickReplyTitle: string
+  setNewQuickReplyTitle: (title: string) => void
+  newQuickReplyContent: string
+  setNewQuickReplyContent: (content: string) => void
+  editingQuickReply: QuickReply | null
+  setEditingQuickReply: (qr: QuickReply | null) => void
+  isSavingQuickReply: boolean
+  handleSaveQuickReply: () => void
+  handleDeleteQuickReply: (id: string) => void
 }
+
+const ChatInputBar = React.memo(
+  forwardRef<ChatInputBarHandle, ChatInputBarProps>(function ChatInputBar(
+    {
+      onSend,
+      isSending,
+      editingMessage,
+      onCancelEdit,
+      activeSignature,
+      isRecording,
+      recordingTime,
+      startRecording,
+      stopAndSendRecording,
+      cancelRecording,
+      isUploading,
+      handleFileUpload,
+      quickReplies,
+      isManageQuickRepliesOpen,
+      setIsManageQuickRepliesOpen,
+      newQuickReplyTitle,
+      setNewQuickReplyTitle,
+      newQuickReplyContent,
+      setNewQuickReplyContent,
+      editingQuickReply,
+      setEditingQuickReply,
+      isSavingQuickReply,
+      handleSaveQuickReply,
+      handleDeleteQuickReply,
+    },
+    ref
+  ) {
+    const [text, setText] = useState("")
+    const [isQuickRepliesMenuOpen, setIsQuickRepliesMenuOpen] = useState(false)
+    const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
+    useImperativeHandle(ref, () => ({
+      setText: (newText: string) => {
+        setText(newText)
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "32px"
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+            }
+          }, 0)
+        }
+      },
+      focus: () => {
+        textareaRef.current?.focus()
+      },
+      clear: () => {
+        setText("")
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "32px"
+        }
+      },
+    }))
+
+    useEffect(() => {
+      if (editingMessage) {
+        setText(editingMessage.content || "")
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.style.height = "32px"
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+          }
+        }, 50)
+      }
+    }, [editingMessage])
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        handleTriggerSend()
+      }
+    }
+
+    const handleTriggerSend = () => {
+      if (!text.trim() || isSending) return
+      const toSend = text
+      setText("")
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "32px"
+      }
+      onSend(toSend)
+    }
+
+    const formatTimeSeconds = (totalSeconds: number) => {
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+    }
+
+    return (
+      <div className="p-3 pb-safe border-t border-border dark:border-white/5 bg-card dark:bg-[#0D0D12]">
+        {editingMessage && (
+          <div className="mb-2 px-3 py-1.5 bg-[#00A3FF]/10 text-[#00A3FF] text-xs rounded-lg flex items-center justify-between border border-[#00A3FF]/20">
+            <span className="flex items-center gap-2">
+              <PenTool className="h-3.5 w-3.5" />
+              Editando mensagem...
+            </span>
+            <button
+              onClick={() => {
+                onCancelEdit()
+                setText("")
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = "32px"
+                }
+              }}
+              className="hover:bg-white/10 rounded-full p-1 transition-colors"
+            >
+              <X className="h-3 w-3 text-white" />
+            </button>
+          </div>
+        )}
+        {activeSignature && (
+          <div className="mb-2 px-1 text-[10px] text-gray-500 flex items-center gap-1.5">
+            <PenTool className="h-3 w-3 text-purple-400" />
+            Enviando mensagem como: <strong className="text-gray-300 font-medium">{activeSignature}</strong>
+          </div>
+        )}
+        <div className="flex items-center gap-2 bg-accent/50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
+          {isRecording ? (
+            <div className="flex items-center justify-between w-full h-8">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={cancelRecording}
+                className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-500/10 flex-shrink-0"
+                title="Cancelar gravação"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-sm font-mono text-red-400 font-medium">
+                  {formatTimeSeconds(recordingTime)}
+                </span>
+              </div>
+              <Button
+                size="icon"
+                onClick={stopAndSendRecording}
+                className="h-8 w-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 flex-shrink-0 transition-all"
+                title="Enviar áudio"
+              >
+                <Send className="h-4 w-4 text-white" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                className="hidden"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || isSending}
+                className="h-8 w-8 text-gray-400 hover:text-white flex-shrink-0"
+                title="Anexar arquivo"
+              >
+                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              </Button>
+
+              {/* Botão Respostas Rápidas */}
+              <Popover open={isQuickRepliesMenuOpen} onOpenChange={setIsQuickRepliesMenuOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={isSending || isUploading}
+                    className="h-8 w-8 text-gray-400 hover:text-[#00A3FF] hover:bg-[#00A3FF]/10 flex-shrink-0"
+                    title="Respostas Rápidas"
+                  >
+                    <Zap className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="start" className="w-80 p-0 border-border dark:border-white/10 bg-popover dark:bg-[#12121A] shadow-2xl mb-2">
+                  {!isManageQuickRepliesOpen ? (
+                    <>
+                      <div className="flex items-center justify-between p-3 border-b border-white/5">
+                        <h4 className="font-semibold text-white text-sm flex items-center gap-2">
+                          <Zap className="h-4 w-4 text-[#00A3FF]" />
+                          Respostas Rápidas
+                        </h4>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsManageQuickRepliesOpen(true)}
+                          className="h-7 text-xs text-[#00A3FF] hover:text-[#00A3FF] hover:bg-[#00A3FF]/10"
+                        >
+                          Gerenciar
+                        </Button>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                        {quickReplies.length === 0 ? (
+                          <div className="text-center p-4 text-xs text-gray-500">
+                            Nenhuma resposta rápida cadastrada.
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            {quickReplies.map(qr => (
+                              <button
+                                key={qr.id}
+                                onClick={() => {
+                                  setIsQuickRepliesMenuOpen(false)
+                                  setText(qr.content)
+                                  setTimeout(() => {
+                                    if (textareaRef.current) {
+                                      textareaRef.current.focus()
+                                      textareaRef.current.style.height = "32px"
+                                      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+                                    }
+                                  }, 50)
+                                }}
+                                className="text-left p-2.5 rounded-lg hover:bg-white/5 transition-colors group flex flex-col gap-1"
+                              >
+                                <span className="font-medium text-foreground dark:text-gray-200 text-sm group-hover:text-[#00A3FF] transition-colors line-clamp-1">{qr.title}</span>
+                                <span className="text-xs text-gray-500 line-clamp-2">{qr.content}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between p-3 border-b border-white/5">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => { setIsManageQuickRepliesOpen(false); setEditingQuickReply(null); setNewQuickReplyTitle(""); setNewQuickReplyContent(""); }}
+                            className="h-6 w-6 hover:bg-white/10 -ml-1"
+                          >
+                            <ArrowLeft className="h-3 w-3" />
+                          </Button>
+                          <h4 className="font-semibold text-white text-sm">
+                            {editingQuickReply ? 'Editar Resposta' : 'Nova Resposta'}
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="p-3 space-y-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-gray-400">Título (ex: Boas vindas)</Label>
+                          <Input
+                            value={newQuickReplyTitle}
+                            onChange={e => setNewQuickReplyTitle(e.target.value)}
+                            placeholder="Digite um título..."
+                            className="h-8 text-sm bg-white/5 border-white/10"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-gray-400">Mensagem</Label>
+                          <Textarea
+                            value={newQuickReplyContent}
+                            onChange={e => setNewQuickReplyContent(e.target.value)}
+                            placeholder="Digite o texto da mensagem..."
+                            className="min-h-[80px] text-sm bg-white/5 border-white/10 resize-none custom-scrollbar"
+                          />
+                        </div>
+                        <div className="pt-2">
+                          <Button
+                            onClick={handleSaveQuickReply}
+                            disabled={!newQuickReplyTitle.trim() || !newQuickReplyContent.trim() || isSavingQuickReply}
+                            className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-8 text-xs"
+                          >
+                            {isSavingQuickReply ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Salvar'}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto border-t border-white/5 custom-scrollbar p-2">
+                        {quickReplies.map(qr => (
+                          <div key={qr.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 group">
+                            <span className="text-sm text-gray-300 font-medium truncate flex-1 pr-2">{qr.title}</span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setEditingQuickReply(qr);
+                                  setNewQuickReplyTitle(qr.title);
+                                  setNewQuickReplyContent(qr.content);
+                                }}
+                                className="h-6 w-6 text-gray-400 hover:text-white"
+                              >
+                                <PenTool className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteQuickReply(qr.id)}
+                                className="h-6 w-6 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </PopoverContent>
+              </Popover>
+
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Digite uma mensagem..."
+                rows={1}
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
+                style={{ minHeight: '32px', maxHeight: '120px' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = '32px';
+                  target.style.height = `${target.scrollHeight}px`;
+                }}
+                disabled={isSending}
+              />
+              {(!text.trim() && !isUploading) ? (
+                <Button
+                  size="icon"
+                  onClick={startRecording}
+                  disabled={isSending}
+                  className="h-8 w-8 rounded-lg bg-transparent hover:bg-accent dark:hover:bg-white/10 text-muted-foreground dark:text-gray-400 hover:text-[#00A3FF] flex-shrink-0 transition-all"
+                  title="Gravar áudio"
+                >
+                  <Mic className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  onClick={handleTriggerSend}
+                  disabled={isSending || !text.trim()}
+                  className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
+                >
+                  {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingMessage ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />)}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+        <p className="hidden sm:block text-[10px] text-muted-foreground mt-1.5 text-center">Enter para enviar · Shift+Enter para nova linha</p>
+      </div>
+    )
+  })
+)
 
 // =============================================
 // Main Component
@@ -225,7 +670,6 @@ export default function AtendimentoPage() {
   const [filteredConvs, setFilteredConvs] = useState<Conversation[]>([])
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [newMessage, setNewMessage] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [isLoadingConvs, setIsLoadingConvs] = useState(true)
   const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
@@ -263,7 +707,7 @@ export default function AtendimentoPage() {
   const [isCreatingConv, setIsCreatingConv] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const chatInputRef = useRef<ChatInputBarHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -516,11 +960,11 @@ export default function AtendimentoPage() {
   }
 
   const handleApplySuggestion = (text: string) => {
-    setNewMessage(text)
+    chatInputRef.current?.setText(text)
     setIsSuggestionsDialogOpen(false)
     toast.success("Sugestão inserida no campo de mensagem!")
     setTimeout(() => {
-      inputRef.current?.focus()
+      chatInputRef.current?.focus()
     }, 150)
   }
 
@@ -738,7 +1182,7 @@ export default function AtendimentoPage() {
   }, [selectedConv?.id, loadMessages])
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
-  useEffect(() => { if (selectedConv) setTimeout(() => inputRef.current?.focus(), 100) }, [selectedConv])
+  useEffect(() => { if (selectedConv) setTimeout(() => chatInputRef.current?.focus(), 100) }, [selectedConv])
 
   // ---- RMK Functions ----
   useEffect(() => {
@@ -770,6 +1214,7 @@ export default function AtendimentoPage() {
 
   const handleToggleRmk = async () => {
     if (!selectedConv?.lead_id) return
+    setIsLoadingLead(false)
     setIsRmkLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -903,7 +1348,7 @@ export default function AtendimentoPage() {
 
   // ---- Send Message ----
   const handleSend = async (mediaUrl?: string, mediaType?: string, overrideText?: string) => {
-    const textToSend = overrideText !== undefined ? overrideText : newMessage
+    const textToSend = overrideText !== undefined ? overrideText : ""
     if ((!textToSend.trim() && !mediaUrl) || !selectedConv || isSending) return
 
     if (editingMessage) {
@@ -927,15 +1372,16 @@ export default function AtendimentoPage() {
         if (!res.ok) {
           const data = await res.json()
           toast.error(data.error || 'Erro ao editar mensagem')
+          chatInputRef.current?.setText(textToSend)
           return
         }
 
         setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: textToSend } : m))
         setEditingMessage(null)
-        if (overrideText === undefined) setNewMessage("")
         toast.success("Mensagem editada com sucesso!")
       } catch (err) {
         toast.error("Erro ao editar mensagem")
+        chatInputRef.current?.setText(textToSend)
       } finally {
         setIsSending(false)
       }
@@ -947,7 +1393,6 @@ export default function AtendimentoPage() {
       content = `*${activeSignature}:*\n${content}`
     }
     content = content || "[Mídia]"
-    if (overrideText === undefined) setNewMessage("")
     setIsSending(true)
 
     const tempMsg: Message = {
@@ -976,7 +1421,7 @@ export default function AtendimentoPage() {
       if (!res.ok) {
         toast.error(data.error || "Erro ao enviar mensagem")
         setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
-        if (overrideText === undefined) setNewMessage(content)
+        chatInputRef.current?.setText(textToSend)
         return
       }
       setMessages(prev => {
@@ -989,7 +1434,7 @@ export default function AtendimentoPage() {
     } catch {
       toast.error("Erro de conexão ao enviar mensagem")
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
-      if (overrideText === undefined) setNewMessage(content)
+      chatInputRef.current?.setText(textToSend)
     } finally {
       setIsSending(false)
     }
@@ -1356,10 +1801,14 @@ export default function AtendimentoPage() {
   }
 
   // ---- Delete Message ----
-  const handleDeleteMessage = async (message: Message) => {
+  const handleDeleteMessage = useCallback((message: Message) => {
     if (!selectedConv || deletingMessageId) return
     setConfirmDeleteMsg(message)
-  }
+  }, [selectedConv, deletingMessageId])
+
+  const handleEditMessage = useCallback((msg: Message) => {
+    setEditingMessage(msg)
+  }, [])
 
   const confirmDeleteMessage = async () => {
     const message = confirmDeleteMsg
@@ -1408,15 +1857,11 @@ export default function AtendimentoPage() {
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend() }
-  }
-
-  const handleSelectConv = (conv: Conversation) => {
+  const handleSelectConv = useCallback((conv: Conversation) => {
     setSelectedConv(conv)
     setMessages([])
     setIsMobileView(true)
-  }
+  }, [])
 
   const handleToggleIAPause = async () => {
     if (!selectedConv?.lead_id) {
@@ -1567,51 +2012,12 @@ export default function AtendimentoPage() {
               </div>
             ) : (
               filteredConvs.map((conv) => (
-                <button
+                <ConversationItem
                   key={conv.id}
-                  onClick={() => handleSelectConv(conv)}
-                  className={cn(
-                    "w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-accent dark:hover:bg-white/[0.03] border-b border-border dark:border-white/[0.03]",
-                    selectedConv?.id === conv.id && "bg-[#00A3FF]/5 border-l-2 border-l-[#00A3FF]"
-                  )}
-                >
-                  <div className="relative">
-                    <ContactAvatar name={conv.contact_name || conv.contact_phone} phone={conv.contact_phone} picUrl={conv.profile_pic_url} />
-                    <Circle className="absolute -bottom-0.5 -right-0.5 h-3 w-3 fill-emerald-500 text-emerald-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-sm font-semibold text-foreground dark:text-gray-100 truncate">
-                        {conv.contact_name || conv.contact_phone}
-                      </span>
-                      <span className="text-[10px] text-gray-600 flex-shrink-0">{formatTime(conv.last_message_at)}</span>
-                    </div>
-                    
-                    {/* Renderização das Badges/Etiquetas */}
-                    {conv.labels && conv.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-1.5">
-                        {conv.labels.map(label => (
-                          <div 
-                            key={label.id} 
-                            style={{ backgroundColor: label.color }} 
-                            className="text-[9px] uppercase font-bold text-white px-1.5 py-0.5 rounded-sm line-clamp-1 truncate max-w-[80px]"
-                            title={label.title}
-                          >
-                            {label.title}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-gray-500 truncate">{conv.last_message || "..."}</p>
-                      {conv.unread_count > 0 && (
-                        <span className="flex-shrink-0 min-w-[18px] bg-[#00A3FF] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 h-4">
-                          {conv.unread_count}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
+                  conv={conv}
+                  isSelected={selectedConv?.id === conv.id}
+                  onSelect={handleSelectConv}
+                />
               ))
             )}
           </div>
@@ -1909,11 +2315,7 @@ export default function AtendimentoPage() {
                         key={msg.id}
                         message={msg}
                         onDelete={handleDeleteMessage}
-                        onEdit={(msg) => {
-                          setEditingMessage(msg)
-                          setNewMessage(msg.content || "")
-                          inputRef.current?.focus()
-                        }}
+                        onEdit={handleEditMessage}
                       />
                     ))}
                     <div ref={messagesEndRef} />
@@ -1921,254 +2323,34 @@ export default function AtendimentoPage() {
                 )}
               </div>
 
-              {/* Input Bar */}
-              <div className="p-3 pb-safe border-t border-border dark:border-white/5 bg-card dark:bg-[#0D0D12]">
-                {editingMessage && (
-                  <div className="mb-2 px-3 py-1.5 bg-[#00A3FF]/10 text-[#00A3FF] text-xs rounded-lg flex items-center justify-between border border-[#00A3FF]/20">
-                    <span className="flex items-center gap-2">
-                      <PenTool className="h-3.5 w-3.5" />
-                      Editando mensagem...
-                    </span>
-                    <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="hover:bg-white/10 rounded-full p-1 transition-colors">
-                      <X className="h-3 w-3 text-white" />
-                    </button>
-                  </div>
-                )}
-                {activeSignature && (
-                  <div className="mb-2 px-1 text-[10px] text-gray-500 flex items-center gap-1.5">
-                    <PenTool className="h-3 w-3 text-purple-400" />
-                    Enviando mensagem como: <strong className="text-gray-300 font-medium">{activeSignature}</strong>
-                  </div>
-                )}
-                <div className="flex items-center gap-2 bg-accent/50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 px-4 py-2 focus-within:border-[#00A3FF]/40 transition-colors">
-                  {isRecording ? (
-                    <div className="flex items-center justify-between w-full h-8">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={cancelRecording}
-                        className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-500/10 flex-shrink-0"
-                        title="Cancelar gravação"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-sm font-mono text-red-400 font-medium">
-                          {formatTimeSeconds(recordingTime)}
-                        </span>
-                      </div>
-                      <Button
-                        size="icon"
-                        onClick={stopAndSendRecording}
-                        className="h-8 w-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 flex-shrink-0 transition-all"
-                        title="Enviar áudio"
-                      >
-                        <Send className="h-4 w-4 text-white" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploading || isSending}
-                        className="h-8 w-8 text-gray-400 hover:text-white flex-shrink-0"
-                        title="Anexar arquivo"
-                      >
-                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-                      </Button>
-
-                      {/* Botão Respostas Rápidas */}
-                      <Popover open={isQuickRepliesMenuOpen} onOpenChange={setIsQuickRepliesMenuOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={isSending || isUploading}
-                            className="h-8 w-8 text-gray-400 hover:text-[#00A3FF] hover:bg-[#00A3FF]/10 flex-shrink-0"
-                            title="Respostas Rápidas"
-                          >
-                            <Zap className="h-4 w-4" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent side="top" align="start" className="w-80 p-0 border-border dark:border-white/10 bg-popover dark:bg-[#12121A] shadow-2xl mb-2">
-                          {!isManageQuickRepliesOpen ? (
-                            <>
-                              <div className="flex items-center justify-between p-3 border-b border-white/5">
-                                <h4 className="font-semibold text-white text-sm flex items-center gap-2">
-                                  <Zap className="h-4 w-4 text-[#00A3FF]" />
-                                  Respostas Rápidas
-                                </h4>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setIsManageQuickRepliesOpen(true)}
-                                  className="h-7 text-xs text-[#00A3FF] hover:text-[#00A3FF] hover:bg-[#00A3FF]/10"
-                                >
-                                  Gerenciar
-                                </Button>
-                              </div>
-                              <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
-                                {quickReplies.length === 0 ? (
-                                  <div className="text-center p-4 text-xs text-gray-500">
-                                    Nenhuma resposta rápida cadastrada.
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-1">
-                                    {quickReplies.map(qr => (
-                                      <button
-                                        key={qr.id}
-                                        onClick={() => {
-                                          setIsQuickRepliesMenuOpen(false)
-                                          setNewMessage(qr.content)
-                                          setTimeout(() => {
-                                            if (inputRef.current) {
-                                              inputRef.current.focus()
-                                              inputRef.current.style.height = '32px'
-                                              inputRef.current.style.height = `${inputRef.current.scrollHeight}px`
-                                            }
-                                          }, 100)
-                                        }}
-                                        className="text-left p-2.5 rounded-lg hover:bg-white/5 transition-colors group flex flex-col gap-1"
-                                      >
-                                        <span className="font-medium text-foreground dark:text-gray-200 text-sm group-hover:text-[#00A3FF] transition-colors line-clamp-1">{qr.title}</span>
-                                        <span className="text-xs text-gray-500 line-clamp-2">{qr.content}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-center justify-between p-3 border-b border-white/5">
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => { setIsManageQuickRepliesOpen(false); setEditingQuickReply(null); setNewQuickReplyTitle(""); setNewQuickReplyContent(""); }}
-                                    className="h-6 w-6 hover:bg-white/10 -ml-1"
-                                  >
-                                    <ArrowLeft className="h-3 w-3" />
-                                  </Button>
-                                  <h4 className="font-semibold text-white text-sm">
-                                    {editingQuickReply ? 'Editar Resposta' : 'Nova Resposta'}
-                                  </h4>
-                                </div>
-                              </div>
-                              <div className="p-3 space-y-3">
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-gray-400">Título (ex: Boas vindas)</Label>
-                                  <Input
-                                    value={newQuickReplyTitle}
-                                    onChange={e => setNewQuickReplyTitle(e.target.value)}
-                                    placeholder="Digite um título..."
-                                    className="h-8 text-sm bg-white/5 border-white/10"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-gray-400">Mensagem</Label>
-                                  <Textarea
-                                    value={newQuickReplyContent}
-                                    onChange={e => setNewQuickReplyContent(e.target.value)}
-                                    placeholder="Digite o texto da mensagem..."
-                                    className="min-h-[80px] text-sm bg-white/5 border-white/10 resize-none custom-scrollbar"
-                                  />
-                                </div>
-                                <div className="pt-2">
-                                  <Button
-                                    onClick={handleSaveQuickReply}
-                                    disabled={!newQuickReplyTitle.trim() || !newQuickReplyContent.trim() || isSavingQuickReply}
-                                    className="w-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white h-8 text-xs"
-                                  >
-                                    {isSavingQuickReply ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Salvar'}
-                                  </Button>
-                                </div>
-                              </div>
-                              <div className="max-h-40 overflow-y-auto border-t border-white/5 custom-scrollbar p-2">
-                                {quickReplies.map(qr => (
-                                  <div key={qr.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 group">
-                                    <span className="text-sm text-gray-300 font-medium truncate flex-1 pr-2">{qr.title}</span>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                          setEditingQuickReply(qr);
-                                          setNewQuickReplyTitle(qr.title);
-                                          setNewQuickReplyContent(qr.content);
-                                        }}
-                                        className="h-6 w-6 text-gray-400 hover:text-white"
-                                      >
-                                        <PenTool className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleDeleteQuickReply(qr.id)}
-                                        className="h-6 w-6 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </PopoverContent>
-                      </Popover>
-
-                      <textarea
-                        ref={inputRef as any}
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Digite uma mensagem..."
-                        rows={1}
-                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none pt-[6px] custom-scrollbar overflow-y-auto"
-                        style={{ minHeight: '32px', maxHeight: '120px' }}
-                        onInput={(e) => {
-                          const target = e.target as HTMLTextAreaElement;
-                          target.style.height = '32px';
-                          target.style.height = `${target.scrollHeight}px`;
-                        }}
-                        disabled={isSending}
-                      />
-                      {(!newMessage.trim() && !isUploading) ? (
-                        <Button
-                          size="icon"
-                          onClick={startRecording}
-                          disabled={isSending}
-                          className="h-8 w-8 rounded-lg bg-transparent hover:bg-accent dark:hover:bg-white/10 text-muted-foreground dark:text-gray-400 hover:text-[#00A3FF] flex-shrink-0 transition-all"
-                          title="Gravar áudio"
-                        >
-                          <Mic className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="icon"
-                          onClick={() => handleSend()}
-                          disabled={isSending}
-                          className="h-8 w-8 rounded-lg bg-[#00A3FF] hover:bg-[#00A3FF]/80 flex-shrink-0 transition-all disabled:opacity-30"
-                        >
-                          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingMessage ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />)}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-                <p className="hidden sm:block text-[10px] text-gray-700 mt-1.5 text-center">Enter para enviar · Shift+Enter para nova linha</p>
-              </div>
+              {/* Chat Input Bar */}
+              <ChatInputBar
+                ref={chatInputRef}
+                onSend={(text) => handleSend(undefined, undefined, text)}
+                isSending={isSending}
+                editingMessage={editingMessage}
+                onCancelEdit={() => setEditingMessage(null)}
+                activeSignature={activeSignature}
+                isRecording={isRecording}
+                recordingTime={recordingTime}
+                startRecording={startRecording}
+                stopAndSendRecording={stopAndSendRecording}
+                cancelRecording={cancelRecording}
+                isUploading={isUploading}
+                handleFileUpload={handleFileUpload}
+                quickReplies={quickReplies}
+                isManageQuickRepliesOpen={isManageQuickRepliesOpen}
+                setIsManageQuickRepliesOpen={setIsManageQuickRepliesOpen}
+                newQuickReplyTitle={newQuickReplyTitle}
+                setNewQuickReplyTitle={setNewQuickReplyTitle}
+                newQuickReplyContent={newQuickReplyContent}
+                setNewQuickReplyContent={setNewQuickReplyContent}
+                editingQuickReply={editingQuickReply}
+                setEditingQuickReply={setEditingQuickReply}
+                isSavingQuickReply={isSavingQuickReply}
+                handleSaveQuickReply={handleSaveQuickReply}
+                handleDeleteQuickReply={handleDeleteQuickReply}
+              />
 
               {/* ===== FLOATING ICON: ASSISTENTE DE MENSAGEM ===== */}
               {assistenteConfig?.is_active && (
