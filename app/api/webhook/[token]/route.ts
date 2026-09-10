@@ -155,6 +155,23 @@ export async function POST(
 // =============================================
 // Handle incoming WhatsApp messages
 // =============================================
+
+/**
+ * Returns true if the name is generic/invalid (should be healed).
+ * A "good" name is non-empty, not just digits, not the phone number itself,
+ * and not a known placeholder string from UazAPI/n8n.
+ */
+function isGenericName(name: string, phone?: string): boolean {
+  if (!name || name.trim().length === 0) return true
+  const n = name.trim().toLowerCase()
+  if (phone && n === phone.toLowerCase()) return true
+  if (/^\d+$/.test(n)) return true
+  if (n.includes('lead whatsapp')) return true
+  if (n.includes('lead externo')) return true
+  if (n === 'sem nome') return true
+  return false
+}
+
 async function handleIncomingMessage(token: string, body: any) {
   try {
     // 1. Find user by webhook_token
@@ -217,6 +234,33 @@ async function handleIncomingMessage(token: string, body: any) {
       return
     }
 
+    // ── Name healing logic ──────────────────────────────────────────────────
+    // incoming name is "good" (real, non-generic)?
+    const incomingNameIsGood = !isGenericName(senderName, senderPhone)
+
+    // Check existing conversation to decide which name to persist
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id, contact_name')
+      .eq('user_id', userId)
+      .eq('contact_phone', senderPhone)
+      .maybeSingle()
+
+    const existingNameIsGood = existingConv ? !isGenericName(existingConv.contact_name, senderPhone) : false
+
+    // Decision:
+    //   incoming good  → always use it (heals bad stored names)
+    //   incoming bad + stored good → keep stored (protect against regression)
+    //   incoming bad + stored bad  → keep incoming (can't do better)
+    const contactNameToUse = incomingNameIsGood
+      ? senderName
+      : existingNameIsGood
+        ? existingConv!.contact_name
+        : senderName
+
+    console.log(`Name resolution: incoming="${senderName}" (good=${incomingNameIsGood}), stored="${existingConv?.contact_name}" (good=${existingNameIsGood}) → using "${contactNameToUse}"`)
+    // ────────────────────────────────────────────────────────────────────────
+
     // 3. Upsert conversation (Inbox)
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
@@ -224,7 +268,7 @@ async function handleIncomingMessage(token: string, body: any) {
         {
           user_id: userId,
           contact_phone: senderPhone,
-          contact_name: senderName,
+          contact_name: contactNameToUse,
           last_message: messageContent,
           last_message_at: new Date().toISOString(),
           unread_count: 1,
@@ -258,7 +302,7 @@ async function handleIncomingMessage(token: string, body: any) {
     // Lookup existing lead by whatsapp number (try with and without country code)
     const { data: existingLead } = await supabase
       .from('leads')
-      .select('id, whatsapp, conversation_id')
+      .select('id, whatsapp, conversation_id, full_name')
       .eq('user_id', userId)
       .or(`whatsapp.eq.${senderPhone},whatsapp.eq.${normalizedPhone}`)
       .maybeSingle()
@@ -266,16 +310,25 @@ async function handleIncomingMessage(token: string, body: any) {
     let leadId: string | null = null
 
     if (existingLead) {
-      // Lead already exists → update last_message and timestamp
+      // Lead already exists → update last_message, timestamp, and heal name if needed
       leadId = existingLead.id
+
+      const leadUpdate: Record<string, any> = {
+        last_message: messageContent,
+        last_message_at: new Date().toISOString(),
+        conversation_id: conversation.id,
+        updated_at: new Date().toISOString(),
+      }
+
+      // Heal the lead's name: only overwrite if stored name is generic AND incoming is real
+      if (incomingNameIsGood && isGenericName(existingLead.full_name, senderPhone)) {
+        leadUpdate.full_name = senderName
+        console.log(`CRM: Healing lead ${leadId} name: "${existingLead.full_name}" → "${senderName}"`)
+      }
+
       await supabase
         .from('leads')
-        .update({
-          last_message: messageContent,
-          last_message_at: new Date().toISOString(),
-          conversation_id: conversation.id,
-          updated_at: new Date().toISOString(),
-        })
+        .update(leadUpdate)
         .eq('id', leadId)
 
       console.log(`CRM: Updated existing lead ${leadId} with last_message`)
@@ -295,7 +348,7 @@ async function handleIncomingMessage(token: string, body: any) {
           .insert({
             user_id: userId,
             column_id: firstColumn.id,
-            full_name: senderName,
+            full_name: contactNameToUse,
             whatsapp: normalizedPhone,
             origin: 'WhatsApp',
             message_sent: false,
