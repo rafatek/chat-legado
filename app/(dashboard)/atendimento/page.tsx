@@ -1296,6 +1296,16 @@ export default function AtendimentoPage() {
     if (error) {
       toast.error("Erro ao salvar dados do contato.")
     } else {
+      // Atualiza também na tabela de conversations para persistir o nome na barra lateral e topo
+      const { error: convError } = await supabase
+        .from('conversations')
+        .update({ contact_name: leadDetails.full_name })
+        .eq('id', selectedConv.id)
+
+      if (convError) {
+        console.error("Erro ao atualizar nome na conversa:", convError)
+      }
+
       toast.success("Dados atualizados com sucesso!")
       // Atualizar o nome no selectedConv e conversations locais para refletir a mudanca instantaneamente
       setConversations(prev => prev.map(c => c.id === selectedConv.id ? { ...c, contact_name: leadDetails.full_name } : c))

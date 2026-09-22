@@ -8,8 +8,9 @@ import { ptBR } from "date-fns/locale"
 import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus, QrCode, RefreshCw, Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { updateSubscriptionStatus, toggleAdminRole, updateProfileEmail, deleteAdminUser, createAdminUser } from "@/lib/actions/admin"
-import { Smartphone } from "lucide-react"
+import { updateSubscriptionStatus, toggleAdminRole, updateProfileData, deleteAdminUser, createAdminUser, createAsaasInvoice, fetchUserSubscription, postponeInvoice, fetchInvoiceDueDate, linkAsaasAccount } from "@/lib/actions/admin"
+import { AdminDashboard } from "./admin-dashboard"
+import { Smartphone, Clock, Link as LinkIcon, LayoutDashboard, List } from "lucide-react"
 
 import {
   Dialog,
@@ -49,24 +50,79 @@ type Profile = {
   is_admin: boolean | null
   updated_at: string | null
   whatsapp_status?: string
+  cpf_cnpj?: string | null
+  base_plan_name?: string | null
+  base_plan_price?: number | null
+  billing_cycle?: string | null
+  next_due_date?: string | null
+}
+
+function DueDateCell({ customerId, localDate }: { customerId?: string | null, localDate?: string | null }) {
+  const [date, setDate] = useState<string | null>(localDate || null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!customerId) return
+    let mounted = true
+    setLoading(true)
+    fetchInvoiceDueDate(customerId).then(res => {
+      if (mounted) {
+        if (res) setDate(res)
+        setLoading(false)
+      }
+    })
+    return () => { mounted = false }
+  }, [customerId])
+
+  if (!customerId && !date) return <span className="text-muted-foreground italic">Não informado</span>
+  if (loading) return <span className="text-muted-foreground animate-pulse">Buscando...</span>
+  
+  if (date) {
+    // Avoid timezone shift by passing local parts
+    const [year, month, day] = date.split('T')[0].split('-')
+    const localDate = new Date(Number(year), Number(month) - 1, Number(day))
+    return <span>{format(localDate, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
+  }
+  
+  return <span className="text-muted-foreground italic">Sem fatura pendente</span>
 }
 
 export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] }) {
   const router = useRouter()
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles)
   const [isPending, startTransition] = useTransition()
+  const [searchTerm, setSearchTerm] = useState("")
+  const [viewMode, setViewMode] = useState<'table' | 'dashboard'>('table')
   
   useEffect(() => {
     setProfiles(initialProfiles)
   }, [initialProfiles])
 
-  // Email edit state
+  // Profile edit state
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
   const [newEmail, setNewEmail] = useState("")
+  const [newCpf, setNewCpf] = useState("")
+  const [newPlanName, setNewPlanName] = useState("")
+  const [newPlanPrice, setNewPlanPrice] = useState("")
+  const [newBillingCycle, setNewBillingCycle] = useState("")
+  const [newNextDueDate, setNewNextDueDate] = useState("")
+  const [newBillingType, setNewBillingType] = useState("UNDEFINED")
+  const [isFetchingSub, setIsFetchingSub] = useState(false)
 
   // Create user state
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [newUser, setNewUser] = useState({ fullName: "", email: "", password: "", whatsapp: "", subscription_id: "" })
+  const [createData, setCreateData] = useState({
+    fullName: "",
+    email: "",
+    whatsapp: "",
+    cpf: "",
+    planName: "",
+    planPrice: "",
+    billingType: "UNDEFINED",
+    billingCycle: "MONTHLY",
+    nextDueDate: "",
+    password: ""
+  })
 
   // WhatsApp Support Connection
   const [connectDialogUser, setConnectDialogUser] = useState<Profile | null>(null)
@@ -77,7 +133,65 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
   const [connectLoading, setConnectLoading] = useState(false)
   const [connectStatus, setConnectStatus] = useState("disconnected")
 
-  const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
+  // Billing states
+  const [billingDialogUser, setBillingDialogUser] = useState<Profile | null>(null)
+  const [newItemDesc, setNewItemDesc] = useState("")
+  const [newItemAmount, setNewItemAmount] = useState("")
+  const [newItemDueDate, setNewItemDueDate] = useState("")
+  const [newItemBillingType, setNewItemBillingType] = useState("UNDEFINED")
+  const [isBillingLoading, setIsBillingLoading] = useState(false)
+
+  const handleOpenBilling = (profile: Profile) => {
+    setBillingDialogUser(profile)
+    setNewItemDesc("")
+    setNewItemAmount("")
+    setNewItemDueDate("")
+    setNewItemBillingType("UNDEFINED")
+  }
+
+  const handleAddInvoiceItem = async () => {
+    if (!newItemDesc || !newItemAmount || !newItemDueDate || !billingDialogUser) return
+    setIsBillingLoading(true)
+    try {
+      const res = await createAsaasInvoice(billingDialogUser.id, newItemDesc, parseFloat(newItemAmount), newItemDueDate, newItemBillingType)
+      if (res.success) {
+        toast.success("Cobrança Avulsa criada no Asaas com sucesso!")
+        setBillingDialogUser(null)
+      } else {
+        toast.error("Erro: " + res.error)
+      }
+    } catch(e) {
+      toast.error("Erro ao criar fatura")
+    } finally {
+      setIsBillingLoading(false)
+    }
+  }
+
+  const handlePostponeInvoice = (userId: string, userName: string) => {
+    if (!window.confirm(`Tem certeza que deseja conceder +3 dias de prazo na fatura atual do usuário ${userName}? Isso não altera os vencimentos dos próximos meses.`)) return
+
+    startTransition(async () => {
+      const { success, error } = await postponeInvoice(userId, 3)
+      if (success) {
+        toast.success("Prazo estendido com sucesso! A conta foi reativada se estivesse bloqueada.")
+        router.refresh()
+      } else {
+        toast.error("Erro ao adiar fatura: " + error)
+      }
+    })
+  }
+
+  const handleLinkAsaas = (userId: string) => {
+    startTransition(async () => {
+      const { success, error } = await linkAsaasAccount(userId)
+      if (success) {
+        toast.success("Conta sincronizada com o Asaas com sucesso!")
+        router.refresh()
+      } else {
+        toast.error("Erro: " + error)
+      }
+    })
+  }
 
   const handleOpenConnect = async (profile: Profile) => {
     setConnectDialogUser(profile)
@@ -114,7 +228,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
       
       // Fetch QR Code immediately
       try {
-        const res = await fetch(`${UAZAPI_URL}/instance/connect`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "token": connData.instance_key },
           body: JSON.stringify({})
@@ -134,8 +248,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     setConnectLoading(true)
     try {
       const cleanPhone = connectPhone.replace(/\D/g, '')
-      // Removemos o ?number da URL, enviando estritamente como o seu cURL
-      const res = await fetch(`${UAZAPI_URL}/instance/connect`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": connectInstance.token },
         body: JSON.stringify({ 
@@ -176,7 +289,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${UAZAPI_URL}/instance/status`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/status`, {
           headers: { "token": connectInstance.token }
         })
         const data = await res.json()
@@ -200,7 +313,6 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
 
   const handleUpdateStatus = (userId: string, newStatus: string) => {
     startTransition(async () => {
-      // Optimistic update
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, subscription_status: newStatus } : p))
       
       const { success, error } = await updateSubscriptionStatus(userId, newStatus)
@@ -208,8 +320,6 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
         toast.success(`Status atualizado para ${newStatus}`)
       } else {
         toast.error("Erro ao atualizar status: " + error)
-        // Revert on error by refreshing the page or fetching data again.
-        // For simplicity, we just show error.
       }
     })
   }
@@ -217,7 +327,6 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
   const handleToggleAdmin = (userId: string, currentIsAdmin: boolean) => {
     const newStatus = !currentIsAdmin
     startTransition(async () => {
-      // Optimistic update
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, is_admin: newStatus } : p))
       
       const { success, error } = await toggleAdminRole(userId, newStatus)
@@ -229,17 +338,26 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     })
   }
 
-  const handleUpdateEmail = () => {
+  const handleUpdateProfile = () => {
     if (!editingUser) return
     startTransition(async () => {
-      setProfiles(prev => prev.map(p => p.id === editingUser.id ? { ...p, email: newEmail } : p))
+      const price = newPlanPrice ? parseFloat(newPlanPrice) : null;
+      setProfiles(prev => prev.map(p => p.id === editingUser.id ? { 
+        ...p, email: newEmail, cpf_cnpj: newCpf, base_plan_name: newPlanName, base_plan_price: price,
+        billing_cycle: newBillingCycle, next_due_date: newNextDueDate 
+      } : p))
       
-      const { success, error } = await updateProfileEmail(editingUser.id, newEmail)
+      const { success, error } = await updateProfileData(
+        editingUser.id, newEmail, newCpf,
+        newPlanName, price || undefined,
+        newBillingCycle || undefined, newNextDueDate || undefined,
+        newBillingType
+      )
       if (success) {
-        toast.success("Email atualizado com sucesso!")
+        toast.success("Perfil atualizado com sucesso!")
         setEditingUser(null)
       } else {
-        toast.error("Erro ao atualizar email: " + error)
+        toast.error("Erro ao atualizar perfil: " + error)
       }
     })
   }
@@ -260,17 +378,40 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
   }
 
   const handleCreateUser = () => {
-    if (!newUser.email || !newUser.fullName) {
+    if (!createData.email || !createData.fullName) {
       toast.error("Nome e Email são obrigatórios")
       return
     }
 
     startTransition(async () => {
-      const { success, error } = await createAdminUser(newUser)
+      const price = createData.planPrice ? parseFloat(createData.planPrice) : undefined;
+      const { success, error } = await createAdminUser({
+        email: createData.email,
+        password: createData.password || undefined,
+        fullName: createData.fullName,
+        whatsapp: createData.whatsapp || undefined,
+        cpf: createData.cpf || undefined,
+        planName: createData.planName || undefined,
+        planPrice: price,
+        billingType: createData.billingType,
+        billingCycle: createData.billingCycle || undefined,
+        nextDueDate: createData.nextDueDate || undefined
+      })
       if (success) {
         toast.success("Usuário criado com sucesso!")
         setIsCreateDialogOpen(false)
-        setNewUser({ fullName: "", email: "", password: "", whatsapp: "", subscription_id: "" })
+        setCreateData({
+          fullName: "",
+          email: "",
+          whatsapp: "",
+          cpf: "",
+          planName: "",
+          planPrice: "",
+          billingType: "UNDEFINED",
+          billingCycle: "MONTHLY",
+          nextDueDate: "",
+          password: ""
+        })
         router.refresh()
       } else {
         toast.error("Erro ao criar usuário: " + error)
@@ -278,40 +419,86 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     })
   }
 
+  const filteredProfiles = profiles.filter(p => 
+    p.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    p.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button 
-          className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white"
-          onClick={() => setIsCreateDialogOpen(true)}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Usuário
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+        <div className="flex items-center bg-black rounded-lg p-1 border border-zinc-800">
+          <button
+            onClick={() => setViewMode('table')}
+            className={cn(
+              "flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all",
+              viewMode === 'table' ? "bg-zinc-800 text-white shadow-sm" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+            )}
+          >
+            <List className="w-4 h-4 mr-2" />
+            Usuários
+          </button>
+          <button
+            onClick={() => setViewMode('dashboard')}
+            className={cn(
+              "flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all",
+              viewMode === 'dashboard' ? "bg-blue-600 text-white shadow-sm" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+            )}
+          >
+            <LayoutDashboard className="w-4 h-4 mr-2" />
+            Dashboard
+          </button>
+        </div>
+
+        {viewMode === 'table' && (
+          <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
+            <div className="relative w-full sm:w-[300px]">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                  <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+                </svg>
+              </div>
+              <input 
+                type="text" 
+                className="bg-black border border-zinc-800 text-white text-sm rounded-full focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5" 
+                placeholder="Pesquisar por nome ou email..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="w-full sm:w-auto rounded-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white font-bold transition-all duration-300 shadow-[0_0_15px_rgba(0,163,255,0.4)] hover:shadow-[0_0_25px_rgba(0,163,255,0.6)]">
+              <Plus className="mr-2 h-4 w-4" /> Novo Usuário
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div className="rounded-md border border-border bg-card/50 backdrop-blur-md">
-      <Table>
-        <TableHeader>
+      {viewMode === 'dashboard' ? (
+        <AdminDashboard />
+      ) : (
+        <div className="rounded-md border border-border bg-card/50 backdrop-blur-md">
+          <Table>
+            <TableHeader>
           <TableRow className="border-b border-white/10 hover:bg-transparent">
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Usuário</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Server ID</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">WhatsApp</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Status Assinatura</TableHead>
-            <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Última Atualização</TableHead>
+            <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Próximo Vencimento</TableHead>
             <TableHead className="text-right text-xs font-black uppercase tracking-wider text-gray-400">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {profiles.length === 0 ? (
+          {filteredProfiles.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                 Nenhum usuário encontrado.
               </TableCell>
             </TableRow>
           ) : (
-            profiles.map((profile) => (
-              <TableRow key={profile.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+            filteredProfiles.map((profile) => (
+              <TableRow key={profile.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
                 <TableCell className="py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#00A3FF]/10 border border-[#00A3FF]/20">
@@ -371,7 +558,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                   )}
                 </TableCell>
                 <TableCell className="text-sm text-gray-400">
-                  {profile.updated_at ? format(new Date(profile.updated_at), "dd 'de' MMM, yyyy", { locale: ptBR }) : 'Desconhecida'}
+                  <DueDateCell customerId={profile.asaas_customer_id} localDate={profile.next_due_date} />
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end items-center gap-2">
@@ -421,6 +608,17 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
 
                       <DropdownMenuSeparator className="bg-white/10" />
 
+                      {/* Billing Action */}
+                      <DropdownMenuItem 
+                        className="cursor-pointer text-blue-400 focus:bg-blue-500/10 focus:text-blue-400"
+                        onClick={() => handleOpenBilling(profile)}
+                      >
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Criar Cobrança Avulsa
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator className="bg-white/10" />
+
                       {/* WhatsApp Connect Action */}
                       <DropdownMenuItem 
                         className="cursor-pointer text-purple-400 focus:bg-purple-500/10 focus:text-purple-400"
@@ -428,6 +626,30 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                       >
                         <Smartphone className="mr-2 h-4 w-4" />
                         Conectar WhatsApp (Suporte)
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator className="bg-white/10" />
+
+                      <DropdownMenuSeparator className="bg-white/10" />
+
+                      {/* Asaas Link Action */}
+                      <DropdownMenuItem 
+                        className="cursor-pointer text-blue-400 focus:bg-blue-500/10 focus:text-blue-400"
+                        onClick={() => handleLinkAsaas(profile.id)}
+                        disabled={isPending}
+                      >
+                        <LinkIcon className="mr-2 h-4 w-4" />
+                        Sincronizar com Asaas
+                      </DropdownMenuItem>
+
+                      {/* Postpone Invoice Action */}
+                      <DropdownMenuItem 
+                        className="cursor-pointer text-orange-400 focus:bg-orange-500/10 focus:text-orange-400"
+                        onClick={() => handlePostponeInvoice(profile.id, profile.full_name || profile.email || 'Usuário')}
+                        disabled={isPending}
+                      >
+                        <Clock className="mr-2 h-4 w-4" />
+                        Adiar Fatura Atual (+3 dias)
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator className="bg-white/10" />
@@ -451,16 +673,33 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                         )}
                       </DropdownMenuItem>
 
-                      {/* Edit Email Action */}
+                      {/* Edit Profile Action */}
                       <DropdownMenuItem 
                         className="cursor-pointer text-gray-300 focus:bg-white/10 focus:text-white"
-                        onClick={() => {
+                        onClick={async () => {
                           setEditingUser(profile)
                           setNewEmail(profile.email || "")
+                          setNewCpf(profile.cpf_cnpj || "")
+                          setNewPlanName("")
+                          setNewPlanPrice("")
+                          setNewBillingCycle("MONTHLY")
+                          setNewNextDueDate("")
+                          setNewBillingType("UNDEFINED")
+                          
+                          setIsFetchingSub(true)
+                          const res = await fetchUserSubscription(profile.id)
+                          if (res.success && res.data) {
+                            setNewPlanName(res.data.planName || "")
+                            setNewPlanPrice(res.data.planPrice ? res.data.planPrice.toString() : "")
+                            setNewBillingCycle(res.data.billingCycle || "MONTHLY")
+                            setNewNextDueDate(res.data.nextDueDate || "")
+                            setNewBillingType(res.data.billingType || "UNDEFINED")
+                          }
+                          setIsFetchingSub(false)
                         }}
                       >
                         <Edit className="mr-2 h-4 w-4" />
-                        Editar Email
+                        Editar Dados, CPF e Plano
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator className="bg-white/10" />
@@ -487,10 +726,17 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
       <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>
         <DialogContent className="bg-[#0A0A12] border border-white/10 text-white sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Editar Email</DialogTitle>
+            <DialogTitle>Editar Perfil</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
+          {isFetchingSub ? (
+            <div className="flex flex-col items-center justify-center p-8 space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-[#00A3FF]" />
+              <p className="text-sm text-gray-400">Buscando assinatura no Asaas...</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+                <div className="grid gap-2">
               <Label htmlFor="email" className="text-gray-400">
                 Email de {editingUser?.full_name || 'Usuário'}
               </Label>
@@ -503,13 +749,101 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                 placeholder="exemplo@email.com"
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cpf" className="text-gray-400">
+                CPF / CNPJ
+              </Label>
+              <Input
+                id="cpf"
+                type="text"
+                value={newCpf}
+                onChange={(e) => setNewCpf(e.target.value)}
+                className="bg-black/50 border-white/10 text-white"
+                placeholder="Apenas números"
+              />
+            </div>
+            
+            <div className="border-t border-white/10 pt-4 mt-2">
+              <Label className="text-white font-medium mb-4 block">Configuração do Plano Base</Label>
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="planName" className="text-gray-400">Nome do Plano (Ex: Plano Mensal Start)</Label>
+                  <Input
+                    id="planName"
+                    type="text"
+                    value={newPlanName}
+                    onChange={(e) => setNewPlanName(e.target.value)}
+                    className="bg-black/50 border-white/10 text-white"
+                    placeholder="Nome do plano"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="planPrice" className="text-gray-400">Valor do Plano Base (R$)</Label>
+                    <Input
+                      id="planPrice"
+                      type="number"
+                      step="0.01"
+                      value={newPlanPrice}
+                      onChange={(e) => setNewPlanPrice(e.target.value)}
+                      className="bg-black/50 border-white/10 text-white"
+                      placeholder="Ex: 900.00"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="billingType" className="text-gray-400">Forma de Pagamento</Label>
+                    <select
+                      id="billingType"
+                      value={newBillingType}
+                      onChange={(e) => setNewBillingType(e.target.value)}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white focus:outline-none"
+                    >
+                      <option value="PIX">Pix</option>
+                      <option value="BOLETO">Boleto</option>
+                      <option value="CREDIT_CARD">Cartão de Crédito</option>
+                      <option value="UNDEFINED">Híbrido (Cliente Escolhe)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-4 grid-cols-2 mt-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="billingCycle" className="text-gray-400">Periodicidade</Label>
+                  <select
+                    id="billingCycle"
+                    value={newBillingCycle}
+                    onChange={(e) => setNewBillingCycle(e.target.value)}
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white focus:outline-none"
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="WEEKLY">Semanal</option>
+                    <option value="MONTHLY">Mensal</option>
+                    <option value="QUARTERLY">Trimestral</option>
+                    <option value="SEMIANNUALLY">Semestral</option>
+                    <option value="YEARLY">Anual</option>
+                  </select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="nextDueDate" className="text-gray-400">Primeiro Vencimento</Label>
+                  <Input
+                    id="nextDueDate"
+                    type="date"
+                    value={newNextDueDate}
+                    onChange={(e) => setNewNextDueDate(e.target.value)}
+                    className="bg-black/50 border-white/10 text-white"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
+            </>
+          )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditingUser(null)} disabled={isPending}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setEditingUser(null)} disabled={isPending || isFetchingSub}>Cancelar</Button>
             <Button 
               className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white" 
-              onClick={handleUpdateEmail}
-              disabled={isPending || !newEmail}
+              onClick={handleUpdateProfile}
+              disabled={isPending || isFetchingSub || (!newEmail && !newCpf)}
             >
               Salvar
             </Button>
@@ -523,13 +857,13 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
           <DialogHeader>
             <DialogTitle>Novo Usuário</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
             <div className="grid gap-2">
               <Label htmlFor="fullName" className="text-gray-400">Nome Completo *</Label>
               <Input
                 id="fullName"
-                value={newUser.fullName}
-                onChange={(e) => setNewUser({...newUser, fullName: e.target.value})}
+                value={createData.fullName}
+                onChange={(e) => setCreateData({...createData, fullName: e.target.value})}
                 className="bg-black/50 border-white/10 text-white"
                 placeholder="Ex: João Silva"
               />
@@ -539,43 +873,121 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
               <Input
                 id="newEmail"
                 type="email"
-                value={newUser.email}
-                onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                value={createData.email}
+                onChange={(e) => setCreateData({...createData, email: e.target.value})}
                 className="bg-black/50 border-white/10 text-white"
                 placeholder="exemplo@email.com"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="whatsapp" className="text-gray-400">WhatsApp (Opcional)</Label>
+              <Label htmlFor="create-whatsapp" className="text-gray-400">WhatsApp (Opcional)</Label>
               <Input
-                id="whatsapp"
-                value={newUser.whatsapp}
-                onChange={(e) => setNewUser({...newUser, whatsapp: e.target.value})}
+                id="create-whatsapp"
+                type="text"
+                value={createData.whatsapp}
+                onChange={(e) => setCreateData({ ...createData, whatsapp: e.target.value })}
                 className="bg-black/50 border-white/10 text-white"
                 placeholder="Ex: 5511999999999"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="subscription_id" className="text-gray-400">ID da Assinatura (Opcional)</Label>
-              <Input
-                id="subscription_id"
-                value={newUser.subscription_id}
-                onChange={(e) => setNewUser({...newUser, subscription_id: e.target.value})}
-                className="bg-black/50 border-white/10 text-white"
-                placeholder="ID no Stripe, etc"
-              />
+            
+            <div className="border-t border-white/10 pt-4 mt-2">
+              <Label className="text-white font-medium mb-4 block">Configuração do Plano Base (Asaas)</Label>
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="create-cpf" className="text-gray-400">CPF / CNPJ *</Label>
+                  <Input
+                    id="create-cpf"
+                    type="text"
+                    value={createData.cpf}
+                    onChange={(e) => setCreateData({ ...createData, cpf: e.target.value })}
+                    className="bg-black/50 border-white/10 text-white"
+                    placeholder="Apenas números"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="create-planName" className="text-gray-400">Nome do Plano (Ex: Plano Mensal Start)</Label>
+                  <Input
+                    id="create-planName"
+                    type="text"
+                    value={createData.planName}
+                    onChange={(e) => setCreateData({ ...createData, planName: e.target.value })}
+                    className="bg-black/50 border-white/10 text-white"
+                    placeholder="Nome do plano"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="create-planPrice" className="text-gray-400">Valor (R$)</Label>
+                    <Input
+                      id="create-planPrice"
+                      type="number"
+                      step="0.01"
+                      value={createData.planPrice}
+                      onChange={(e) => setCreateData({ ...createData, planPrice: e.target.value })}
+                      className="bg-black/50 border-white/10 text-white"
+                      placeholder="Ex: 900.00"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="create-billingType" className="text-gray-400">Forma de Pagto</Label>
+                    <select
+                      id="create-billingType"
+                      value={createData.billingType}
+                      onChange={(e) => setCreateData({ ...createData, billingType: e.target.value })}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white focus:outline-none"
+                    >
+                      <option value="PIX">Pix</option>
+                      <option value="BOLETO">Boleto</option>
+                      <option value="CREDIT_CARD">Cartão</option>
+                      <option value="UNDEFINED">Híbrido (Escolhe)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-4 grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="create-billingCycle" className="text-gray-400">Periodicidade</Label>
+                    <select
+                      id="create-billingCycle"
+                      value={createData.billingCycle}
+                      onChange={(e) => setCreateData({ ...createData, billingCycle: e.target.value })}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white focus:outline-none"
+                    >
+                      <option value="WEEKLY">Semanal</option>
+                      <option value="BIWEEKLY">Quinzenal</option>
+                      <option value="MONTHLY">Mensal</option>
+                      <option value="QUARTERLY">Trimestral</option>
+                      <option value="SEMIANNUALLY">Semestral</option>
+                      <option value="YEARLY">Anual</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="create-nextDueDate" className="text-gray-400">Primeiro Vencimento</Label>
+                    <Input
+                      id="create-nextDueDate"
+                      type="date"
+                      value={createData.nextDueDate}
+                      onChange={(e) => setCreateData({ ...createData, nextDueDate: e.target.value })}
+                      className="bg-black/50 border-white/10 text-white"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password" className="text-gray-400">Senha (Opcional)</Label>
-              <Input
-                id="password"
-                type="password"
-                value={newUser.password}
-                onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                className="bg-black/50 border-white/10 text-white"
-                placeholder="Deixe em branco para senha padrão"
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Se deixado em branco, a senha padrão "Temporaria123!" será usada.</p>
+
+            <div className="border-t border-white/10 pt-4 mt-2">
+              <div className="grid gap-2">
+                <Label htmlFor="create-password" className="text-gray-400">Senha (Opcional)</Label>
+                <Input
+                  id="create-password"
+                  type="password"
+                  value={createData.password}
+                  onChange={(e) => setCreateData({ ...createData, password: e.target.value })}
+                  className="bg-black/50 border-white/10 text-white"
+                  placeholder="Deixe em branco para senha padrão"
+                />
+                <p className="text-xs text-gray-500 mt-1">Se deixado em branco, a senha padrão "Temporaria123!" será usada.</p>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -583,12 +995,66 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
             <Button 
               className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white" 
               onClick={handleCreateUser}
-              disabled={isPending || !newUser.email || !newUser.fullName}
+              disabled={isPending || !createData.email || !createData.fullName}
             >
               <Plus className="mr-2 h-4 w-4" />
               Criar Usuário
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Gerenciar Faturas Dialog */}
+      <Dialog open={!!billingDialogUser} onOpenChange={(o) => !o && setBillingDialogUser(null)}>
+        <DialogContent className="bg-[#0A0A12] border border-white/10 text-white sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Cobrança Avulsa: {billingDialogUser?.full_name || 'Usuário'}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-6">
+            <div className="space-y-3">
+              <h4 className="font-semibold text-sm">Criar Cobrança Avulsa (Direto no Asaas)</h4>
+              <div className="grid grid-cols-4 gap-2">
+                <Input 
+                  placeholder="Descrição (Ex: Arte Extra)" 
+                  className="bg-black/50 border-white/10 col-span-4"
+                  value={newItemDesc}
+                  onChange={e => setNewItemDesc(e.target.value)}
+                />
+                <Input 
+                  type="number"
+                  placeholder="Valor (R$)" 
+                  className="bg-black/50 border-white/10"
+                  value={newItemAmount}
+                  onChange={e => setNewItemAmount(e.target.value)}
+                />
+                <select
+                  value={newItemBillingType}
+                  onChange={(e) => setNewItemBillingType(e.target.value)}
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white focus:outline-none col-span-2"
+                >
+                  <option value="PIX">Pix</option>
+                  <option value="BOLETO">Boleto</option>
+                  <option value="CREDIT_CARD">Cartão</option>
+                  <option value="UNDEFINED">Híbrido (Escolhe)</option>
+                </select>
+                <Input 
+                  type="date"
+                  className="bg-black/50 border-white/10"
+                  value={newItemDueDate}
+                  onChange={e => setNewItemDueDate(e.target.value)}
+                  title="Data de Vencimento"
+                />
+                <Button className="col-span-4 mt-2" onClick={handleAddInvoiceItem} disabled={isBillingLoading || !newItemDesc || !newItemAmount || !newItemDueDate}>
+                  {isBillingLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                  Cobrar
+                </Button>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10 text-center text-sm text-gray-400">
+              <p>A assinatura base é cobrada automaticamente pelo Asaas na data do vencimento. <br/>As cobranças avulsas que você cria aqui vão gerar faturas separadas lá no Asaas para o cliente pagar.</p>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -674,6 +1140,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
         </DialogContent>
       </Dialog>
       </div>
+      )}
     </div>
   )
 }

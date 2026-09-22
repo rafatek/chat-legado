@@ -9,7 +9,7 @@ import { Lock, Zap, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 // Rotas que são permitidas mesmo sem assinatura ativa
-const ALLOWED_ROUTES = ["/conta", "/suporte", "/login"]
+const ALLOWED_ROUTES = ["/conta", "/suporte", "/login", "/faturas"]
 
 export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter()
@@ -154,7 +154,7 @@ export function SubscriptionGuard({ children }: { children: React.ReactNode }) {
                                     size="lg"
                                     className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-medium shadow-lg hover:shadow-red-500/25 transition-all duration-300"
                                 >
-                                    <a href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+                                    <a href="/faturas">
                                         <Zap className="mr-2 h-4 w-4" />
                                         Atualizar Assinatura
                                     </a>

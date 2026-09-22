@@ -14,6 +14,7 @@ import {
 import { useState, useEffect } from "react"
 import { OnboardingTour } from "@/components/onboarding-tour"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { supabase } from "@/lib/supabase"
 
 const TUTORIAL_LINKS: Record<string, string> = {
   "/dashboard": "",
@@ -43,6 +44,7 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
   const videoId = getVideoId(videoUrl)
   const [showTour, setShowTour] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [daysUntilDue, setDaysUntilDue] = useState<number | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -54,6 +56,40 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
       }, 1000)
       return () => clearTimeout(timer)
     }
+  }, [])
+
+  useEffect(() => {
+    async function checkDueDate() {
+      try {
+        const res = await fetch('/api/invoices/next-due')
+        if (!res.ok) return
+        
+        const data = await res.json()
+        
+        if (data?.next_due_date) {
+          // Asaas returns YYYY-MM-DD. Split to avoid timezone shift in JavaScript.
+          const [year, month, day] = data.next_due_date.split('-')
+          const dueDate = new Date(Number(year), Number(month) - 1, Number(day))
+          
+          const now = new Date()
+          
+          // Zera as horas para comparar apenas os dias exatos
+          dueDate.setHours(0, 0, 0, 0)
+          now.setHours(0, 0, 0, 0)
+          
+          const diffTime = dueDate.getTime() - now.getTime()
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+          
+          // Mostra o aviso se faltar 5 dias ou menos (e >= 0 para não mostrar negativo)
+          if (diffDays <= 5 && diffDays >= 0) {
+            setDaysUntilDue(diffDays)
+          }
+        }
+      } catch (e) {
+        // Ignora erro, pois o aviso não é crítico
+      }
+    }
+    checkDueDate()
   }, [])
 
   const handleTourComplete = () => {
@@ -78,6 +114,16 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
 
         {/* Ações da direita: Tema + Tutorial */}
         <div className="flex items-center gap-3">
+          {daysUntilDue !== null && (
+            <div className="hidden sm:flex items-center text-red-500 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20 mr-1 animate-pulse">
+              <span className="text-xs font-bold uppercase tracking-wider">
+                {daysUntilDue === 0 
+                  ? "Sua fatura vence hoje!" 
+                  : `Falta${daysUntilDue > 1 ? 'm' : ''} ${daysUntilDue} dia${daysUntilDue > 1 ? 's' : ''} para vencer!`}
+              </span>
+            </div>
+          )}
+          
           <ThemeToggle />
           
           {mounted ? (

@@ -18,6 +18,7 @@ import {
   X,
   Zap,
   CalendarClock,
+  FileText,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -30,6 +31,7 @@ const navigation = [
   { name: "CRM/Kanban", href: "/crm", icon: FolderKanban },
   { name: "Atendimento", href: "/atendimento", icon: MessageSquare },
   { name: "Agendamentos", href: "/agendamentos", icon: CalendarClock },
+  { name: "Faturas", href: "/faturas", icon: FileText },
   { name: "Disparos", href: "/campanhas", icon: Megaphone },
   { name: "Remarketing", href: "/remarketing", icon: Target },
   { name: "Conexões", href: "/conexoes", icon: Link2 },
