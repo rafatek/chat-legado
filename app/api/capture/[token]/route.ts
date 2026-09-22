@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit } from '@/lib/utils/rate-limit'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -57,6 +58,13 @@ export async function POST(
   try {
     const { token } = await params
     
+    // 0. Rate Limiting Check (60 requests per minute)
+    const { success, remaining, resetAt } = checkRateLimit(`capture_${token}`, { maxRequests: 60 })
+    if (!success) {
+      console.warn(`[RATE LIMIT] Blocked capture webhook token: ${token}. Reset at ${new Date(resetAt).toISOString()}`)
+      return NextResponse.json({ error: 'Too Many Requests', retryAfter: new Date(resetAt).toISOString() }, { status: 429, headers: corsHeaders })
+    }
+
     // 1. Fetch Webhook By Token
     const { data: webhook, error: hookError } = await supabaseAdmin
       .from('capture_webhooks')
@@ -137,7 +145,7 @@ export async function POST(
         }).select().single()
         
         if (leadError) {
-          return NextResponse.json({ error: 'Erro de Banco de Dados ao criar Lead', details: leadError.message }, { status: 500, headers: corsHeaders })
+          return NextResponse.json({ error: 'Erro de Banco de Dados ao criar Lead' }, { status: 500, headers: corsHeaders })
         }
         lead = newLead
     }
@@ -180,7 +188,7 @@ export async function POST(
         }).select().single()
         
         if (convError) {
-          return NextResponse.json({ error: 'Erro de Banco de Dados ao criar Conversa', details: convError.message }, { status: 500, headers: corsHeaders })
+          return NextResponse.json({ error: 'Erro de Banco de Dados ao criar Conversa' }, { status: 500, headers: corsHeaders })
         }
         conversation = newConv
     }

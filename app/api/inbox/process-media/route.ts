@@ -110,8 +110,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Erro ao baixar o arquivo físico da UazAPI' }, { status: 502 })
     }
 
-    const arrayBuffer = await fileRes.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    // Validação de Tamanho (DoS Protection - max 25MB)
+    const MAX_SIZE = 25 * 1024 * 1024;
+    const contentLength = Number(fileRes.headers.get('content-length') || 0);
+    if (contentLength > MAX_SIZE) {
+      return NextResponse.json({ error: 'Arquivo excede limite de 25MB' }, { status: 413 });
+    }
+
+    // Download seguro com limite de memória
+    const chunks: Buffer[] = [];
+    let downloadedSize = 0;
+    
+    if (fileRes.body) {
+      const reader = fileRes.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          downloadedSize += value.length;
+          if (downloadedSize > MAX_SIZE) {
+            return NextResponse.json({ error: 'Arquivo excedeu limite de 25MB durante download' }, { status: 413 });
+          }
+          chunks.push(Buffer.from(value));
+        }
+      }
+    } else {
+       // Fallback se não suportar stream
+       const arrayBuffer = await fileRes.arrayBuffer();
+       if (arrayBuffer.byteLength > MAX_SIZE) {
+         return NextResponse.json({ error: 'Arquivo excede limite' }, { status: 413 });
+       }
+       chunks.push(Buffer.from(arrayBuffer));
+    }
+    const buffer = Buffer.concat(chunks);
     
     // Identificar a extensão do arquivo
     let extension = 'bin'
@@ -125,7 +156,18 @@ export async function POST(req: NextRequest) {
       else if (mimeType.includes('application/pdf')) extension = 'pdf'
     } else if (message.content?.fileName) {
       const parts = message.content.fileName.split('.')
-      if (parts.length > 1) extension = parts.pop()
+      if (parts.length > 1) extension = parts.pop() || 'bin'
+    }
+
+    // Validação rígida de extensões permitidas (Allowlist de segurança)
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mp3', 'ogg', 'wav', 'm4a', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'];
+    const cleanExt = extension.toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    if (!allowedExtensions.includes(cleanExt)) {
+      console.warn(`[process-media] Extensão perigosa bloqueada: ${cleanExt}. Salvando como binário inofensivo.`);
+      extension = 'bin'; // Sanitiza executáveis/html para .bin
+    } else {
+      extension = cleanExt;
     }
 
     // 3. Fazer o upload para o Supabase
@@ -158,6 +200,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('[process-media] Erro fatal:', err)
-    return NextResponse.json({ error: `Internal Server Error: ${err.message}` }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

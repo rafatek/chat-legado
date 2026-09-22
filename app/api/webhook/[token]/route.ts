@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { formatBrazilianPhone } from '@/lib/utils/phone'
+import { checkRateLimit } from '@/lib/utils/rate-limit'
 
 // Initializing Supabase Client with Service Role Key to bypass RLS for token lookup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -33,6 +34,13 @@ export async function POST(
 
     if (!token) {
       return NextResponse.json({ error: 'Token is required' }, { status: 400, headers: corsHeaders })
+    }
+
+    // Rate Limiting Check (100 requests per minute for messaging webhooks)
+    const { success, remaining, resetAt } = checkRateLimit(`webhook_${token}`, { maxRequests: 100 })
+    if (!success) {
+      console.warn(`[RATE LIMIT] Blocked message webhook token: ${token}. Reset at ${new Date(resetAt).toISOString()}`)
+      return NextResponse.json({ error: 'Too Many Requests', retryAfter: new Date(resetAt).toISOString() }, { status: 429, headers: corsHeaders })
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -135,7 +143,7 @@ export async function POST(
 
     if (rpcError) {
       console.error('RPC Error:', rpcError)
-      return NextResponse.json({ error: `Database Error: ${rpcError.message}` }, { status: 500, headers: corsHeaders })
+      return NextResponse.json({ error: 'Database Error' }, { status: 500, headers: corsHeaders })
     }
 
     if (rpcData && !rpcData.success) {
@@ -148,7 +156,7 @@ export async function POST(
 
   } catch (err: any) {
     console.error('Fatal Webhook Error:', err)
-    return NextResponse.json({ error: `Internal Server Error: ${err.message}` }, { status: 500, headers: corsHeaders })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500, headers: corsHeaders })
   }
 }
 

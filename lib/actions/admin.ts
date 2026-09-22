@@ -27,10 +27,10 @@ export async function getAdminProfiles() {
         await verifyAdmin()
         const supabaseAdmin = await createAdminClient()
 
-        // 1. Fetch all profiles
+        // 1. Fetch all profiles explicitly without secret fields like invoice_pin
         const { data: profilesData, error: profilesError } = await supabaseAdmin
             .from("profiles")
-            .select("*")
+            .select("id, full_name, email, subscription_status, server_id, is_admin, updated_at, cpf_cnpj")
 
         if (profilesError) {
             console.error(`Error fetching profiles: [${profilesError.code}] ${profilesError.message}`)
