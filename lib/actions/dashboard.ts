@@ -26,7 +26,7 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
     const supabaseAdmin = await createAdminClient()
     
     const { ASAAS_API_URL, ASAAS_API_KEY } = await import('@/lib/asaas')
-    const headers = { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' }
+    const headers = { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json', 'User-Agent': 'Legado-App/1.0' }
 
     // Determinar as datas baseadas no período escolhido
     const now = new Date()
@@ -84,10 +84,13 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
       
       while (hasMore) {
         const queryStr = paramsString ? `${paramsString}&limit=${limit}&offset=${offset}` : `limit=${limit}&offset=${offset}`
-        const res = await fetch(`${ASAAS_API_URL}/payments?${queryStr}`, { headers })
+        const urlToFetch = `${ASAAS_API_URL}/payments?${queryStr}`
+        const res = await fetch(urlToFetch, { headers, cache: 'no-store' })
         
+        let text = "";
         try {
-          const data = await res.json()
+          text = await res.text()
+          const data = JSON.parse(text)
           if (data && data.data && data.data.length > 0) {
             allPayments = allPayments.concat(data.data)
             offset += limit
@@ -96,7 +99,9 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
             hasMore = false
           }
         } catch (e) {
-          console.error("Asaas API Error parsing JSON:", e)
+          console.error(`Asaas API Error parsing JSON. URL: ${urlToFetch}, Status: ${res.status} ${res.statusText}`)
+          console.error(`Raw response body: "${text}"`)
+          console.error(e)
           hasMore = false
         }
       }

@@ -29,6 +29,7 @@ export const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
 const headers = {
   'Content-Type': 'application/json',
   access_token: ASAAS_API_KEY,
+  'User-Agent': 'Legado-App/1.0'
 };
 
 async function handleAsaasError(response: Response, defaultMessage: string) {
@@ -78,6 +79,7 @@ export async function getPixQrCode(paymentId: string) {
   const response = await fetch(`${ASAAS_API_URL}/payments/${paymentId}/pixQrCode`, {
     method: 'GET',
     headers,
+    cache: 'no-store'
   });
 
   if (!response.ok) {
@@ -119,6 +121,7 @@ export async function listAsaasPayments(customerId: string) {
   const response = await fetch(`${ASAAS_API_URL}/payments?customer=${customerId}`, {
     method: 'GET',
     headers,
+    cache: 'no-store'
   });
 
   if (!response.ok) {
@@ -132,6 +135,7 @@ export async function getAsaasSubscription(subscriptionId: string) {
   const response = await fetch(`${ASAAS_API_URL}/subscriptions/${subscriptionId}`, {
     method: 'GET',
     headers,
+    cache: 'no-store'
   });
 
   if (!response.ok) {

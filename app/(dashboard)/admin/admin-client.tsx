@@ -228,7 +228,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
       
       // Fetch QR Code immediately
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/connect`, {
+        const res = await fetch(`${(process.env.NEXT_PUBLIC_UAZAPI_URL || '').replace(/\/$/, '')}/instance/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "token": connData.instance_key },
           body: JSON.stringify({})
@@ -248,7 +248,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     setConnectLoading(true)
     try {
       const cleanPhone = connectPhone.replace(/\D/g, '')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/connect`, {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_UAZAPI_URL || '').replace(/\/$/, '')}/instance/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": connectInstance.token },
         body: JSON.stringify({ 
@@ -289,7 +289,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
     
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_UAZAPI_URL || ''}/instance/status`, {
+        const res = await fetch(`${(process.env.NEXT_PUBLIC_UAZAPI_URL || '').replace(/\/$/, '')}/instance/status`, {
           headers: { "token": connectInstance.token }
         })
         const data = await res.json()

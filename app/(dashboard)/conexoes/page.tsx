@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import { initWhatsappInstance, deleteWhatsappInstance } from "@/lib/actions/whatsapp"
 
 // Env vars
-const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
+const UAZAPI_URL = (process.env.NEXT_PUBLIC_UAZAPI_URL || "").replace(/\/$/, "")
 
 export default function ConexoesPage() {
   const [loading, setLoading] = useState(true)

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase-server"
 
-const UAZAPI_URL = process.env.NEXT_PUBLIC_UAZAPI_URL
+const UAZAPI_URL = (process.env.NEXT_PUBLIC_UAZAPI_URL || "").replace(/\/$/, "")
 const UAZAPI_ADMIN_TOKEN = process.env.UAZAPI_ADMIN_TOKEN
 
 export async function initWhatsappInstance(payload: any) {
