@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus, QrCode, RefreshCw, Loader2 } from "lucide-react"
+import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus, QrCode, RefreshCw, Loader2, AlertCircle, AlertTriangle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { updateSubscriptionStatus, toggleAdminRole, updateProfileData, deleteAdminUser, createAdminUser, createAsaasInvoice, fetchUserSubscription, postponeInvoice, fetchInvoiceDueDate, linkAsaasAccount } from "@/lib/actions/admin"
 import { AdminDashboard } from "./admin-dashboard"
+import { AdminPinGate } from "./admin-pin-gate"
+import { Lock } from "lucide-react"
 import { Smartphone, Clock, Link as LinkIcon, LayoutDashboard, List } from "lucide-react"
 
 import {
@@ -57,22 +59,37 @@ type Profile = {
   next_due_date?: string | null
 }
 
+const dueDateMemoryCache = new Map<string, Promise<string | null>>()
+
+function fetchCachedInvoiceDueDate(customerId: string): Promise<string | null> {
+  if (dueDateMemoryCache.has(customerId)) {
+    return dueDateMemoryCache.get(customerId)!
+  }
+  const promise = fetchInvoiceDueDate(customerId)
+  dueDateMemoryCache.set(customerId, promise)
+  return promise
+}
+
 function DueDateCell({ customerId, localDate }: { customerId?: string | null, localDate?: string | null }) {
   const [date, setDate] = useState<string | null>(localDate || null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
+    if (localDate) {
+      setDate(localDate)
+      return
+    }
     if (!customerId) return
     let mounted = true
     setLoading(true)
-    fetchInvoiceDueDate(customerId).then(res => {
+    fetchCachedInvoiceDueDate(customerId).then(res => {
       if (mounted) {
         if (res) setDate(res)
         setLoading(false)
       }
     })
     return () => { mounted = false }
-  }, [customerId])
+  }, [customerId, localDate])
 
   if (!customerId && !date) return <span className="text-muted-foreground italic">Não informado</span>
   if (loading) return <span className="text-muted-foreground animate-pulse">Buscando...</span>
@@ -80,19 +97,123 @@ function DueDateCell({ customerId, localDate }: { customerId?: string | null, lo
   if (date) {
     // Avoid timezone shift by passing local parts
     const [year, month, day] = date.split('T')[0].split('-')
-    const localDate = new Date(Number(year), Number(month) - 1, Number(day))
-    return <span>{format(localDate, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
+    const localDateObj = new Date(Number(year), Number(month) - 1, Number(day))
+    return <span>{format(localDateObj, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
   }
   
   return <span className="text-muted-foreground italic">Sem fatura pendente</span>
 }
 
-export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] }) {
+function DueDateAlertCell({ customerId, localDate }: { customerId?: string | null, localDate?: string | null }) {
+  const [date, setDate] = useState<string | null>(localDate || null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (localDate) {
+      setDate(localDate)
+      return
+    }
+    if (!customerId) return
+    let mounted = true
+    setLoading(true)
+    fetchCachedInvoiceDueDate(customerId).then(res => {
+      if (mounted) {
+        if (res) setDate(res)
+        setLoading(false)
+      }
+    })
+    return () => { mounted = false }
+  }, [customerId, localDate])
+
+  if (loading) {
+    return <span className="text-muted-foreground text-xs animate-pulse">...</span>
+  }
+
+  if (!date) {
+    return <span className="text-muted-foreground text-xs italic">-</span>
+  }
+
+  const [year, month, day] = date.split('T')[0].split('-').map(Number)
+  if (!year || !month || !day) return <span className="text-muted-foreground text-xs italic">-</span>
+
+  const targetDate = new Date(year, month - 1, day)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
+  // 1. Já venceu (< 0) -> Vermelho: "Venceu"
+  if (diffDays < 0) {
+    return (
+      <Badge variant="outline" className="border-red-500/40 text-red-500 bg-red-500/10 gap-1.5 pl-1.5 pr-2 font-medium">
+        <AlertCircle className="h-3 w-3 text-red-500" />
+        Venceu
+      </Badge>
+    )
+  }
+
+  // 2. Faltando 1 dia ou hoje (0 ou 1) -> Vermelho: "Hoje"
+  if (diffDays === 0 || diffDays === 1) {
+    return (
+      <Badge variant="outline" className="border-red-500/30 text-red-400 bg-red-500/10 gap-1.5 pl-1.5 pr-2 font-medium animate-pulse">
+        <AlertCircle className="h-3 w-3 text-red-400" />
+        Hoje
+      </Badge>
+    )
+  }
+
+  // 3. Faltando 2 ou 3 dias -> Laranja: "Falta X dias"
+  if (diffDays >= 2 && diffDays <= 3) {
+    return (
+      <Badge variant="outline" className="border-orange-500/30 text-orange-400 bg-orange-500/10 gap-1.5 pl-1.5 pr-2 font-medium">
+        <AlertTriangle className="h-3 w-3 text-orange-400" />
+        Falta {diffDays} dias
+      </Badge>
+    )
+  }
+
+  // 4. Faltando 4 a 6 dias -> Amarelo: "Falta X dias"
+  if (diffDays >= 4 && diffDays <= 6) {
+    return (
+      <Badge variant="outline" className="border-yellow-500/30 text-yellow-400 bg-yellow-500/10 gap-1.5 pl-1.5 pr-2 font-medium">
+        <Clock className="h-3 w-3 text-yellow-400" />
+        Falta {diffDays} dias
+      </Badge>
+    )
+  }
+
+  // 5. Mais de 6 dias -> Verde/Neutro em dia
+  return (
+    <Badge variant="outline" className="border-emerald-500/20 text-emerald-400/80 bg-emerald-500/5 gap-1.5 pl-1.5 pr-2 text-xs">
+      <Check className="h-3 w-3 text-emerald-400/80" />
+      Falta {diffDays} dias
+    </Badge>
+  )
+}
+
+export function AdminClient({
+  initialProfiles,
+  hasPin = false,
+  initialPinUnlocked = true,
+}: {
+  initialProfiles: Profile[]
+  hasPin?: boolean
+  initialPinUnlocked?: boolean
+}) {
   const router = useRouter()
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles)
   const [isPending, startTransition] = useTransition()
   const [searchTerm, setSearchTerm] = useState("")
   const [viewMode, setViewMode] = useState<'table' | 'dashboard'>('table')
+  const [hasPinState, setHasPinState] = useState(hasPin)
+  const [isPinUnlocked, setIsPinUnlocked] = useState(initialPinUnlocked)
+
+  useEffect(() => {
+    setHasPinState(hasPin)
+  }, [hasPin])
+
+  useEffect(() => {
+    setIsPinUnlocked(initialPinUnlocked)
+  }, [initialPinUnlocked])
   
   useEffect(() => {
     setProfiles(initialProfiles)
@@ -447,6 +568,9 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
           >
             <LayoutDashboard className="w-4 h-4 mr-2" />
             Dashboard
+            {!isPinUnlocked && (
+              <Lock className="w-3.5 h-3.5 text-yellow-400/90 ml-1.5" />
+            )}
           </button>
         </div>
 
@@ -474,10 +598,22 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
         )}
       </div>
 
-      {viewMode === 'dashboard' ? (
-        <AdminDashboard />
-      ) : (
-        <div className="rounded-md border border-border bg-card/50 backdrop-blur-md">
+      <div className={cn(viewMode === 'dashboard' ? "block" : "hidden")}>
+        {!isPinUnlocked ? (
+          <AdminPinGate
+            hasPin={hasPinState}
+            onUnlock={() => setIsPinUnlocked(true)}
+            onPinConfigured={() => {
+              setHasPinState(true)
+              setIsPinUnlocked(true)
+            }}
+          />
+        ) : (
+          <AdminDashboard onLock={() => setIsPinUnlocked(false)} />
+        )}
+      </div>
+
+      <div className={cn(viewMode === 'table' ? "block" : "hidden", "rounded-md border border-border bg-card/50 backdrop-blur-md")}>
           <Table>
             <TableHeader>
           <TableRow className="border-b border-white/10 hover:bg-transparent">
@@ -486,13 +622,14 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">WhatsApp</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Status Assinatura</TableHead>
             <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Próximo Vencimento</TableHead>
+            <TableHead className="text-xs font-black uppercase tracking-wider text-gray-400">Alerta Vencimento</TableHead>
             <TableHead className="text-right text-xs font-black uppercase tracking-wider text-gray-400">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {filteredProfiles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                 Nenhum usuário encontrado.
               </TableCell>
             </TableRow>
@@ -559,6 +696,9 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
                 </TableCell>
                 <TableCell className="text-sm text-gray-400">
                   <DueDateCell customerId={profile.asaas_customer_id} localDate={profile.next_due_date} />
+                </TableCell>
+                <TableCell>
+                  <DueDateAlertCell customerId={profile.asaas_customer_id} localDate={profile.next_due_date} />
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end items-center gap-2">
@@ -722,6 +862,7 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
           )}
         </TableBody>
       </Table>
+      </div>
 
       <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>
         <DialogContent className="bg-[#0A0A12] border border-white/10 text-white sm:max-w-[425px]">
@@ -1139,8 +1280,6 @@ export function AdminClient({ initialProfiles }: { initialProfiles: Profile[] })
           </div>
         </DialogContent>
       </Dialog>
-      </div>
-      )}
     </div>
   )
 }

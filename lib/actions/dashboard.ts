@@ -3,6 +3,14 @@
 import { createAdminClient } from "@/lib/supabase-admin"
 import { verifyAdmin } from "./admin"
 
+// Cache em memória no servidor (60 segundos por período)
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const metricsCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60 * 1000;
+
 // Funções auxiliares de data
 function getStartOfDay(date: Date) {
   const d = new Date(date)
@@ -20,9 +28,53 @@ function formatAsaasDate(date: Date) {
   return date.toISOString().split('T')[0]
 }
 
-export async function getDashboardMetrics(period: 'current_month' | 'last_month' | 'last_30_days' | 'last_6_months') {
+export async function getDashboardMetrics(
+  period: 'current_month' | 'last_month' | 'last_30_days' | 'last_6_months',
+  forceRefresh: boolean = false
+) {
   try {
     await verifyAdmin()
+
+    // Proteção de segurança: se o admin possui invoice_pin configurado, exige sessão válida
+    const { createClient } = await import("@/lib/supabase-server")
+    const supabaseUser = await createClient()
+    const { data: { user } } = await supabaseUser.auth.getUser()
+    if (user) {
+      const { data: userProfile } = await supabaseUser
+        .from("profiles")
+        .select("invoice_pin")
+        .eq("id", user.id)
+        .single()
+
+      if (userProfile?.invoice_pin) {
+        const { cookies } = await import("next/headers")
+        const cookieStore = await cookies()
+        const deviceId = cookieStore.get("device_id")?.value
+        if (!deviceId) {
+          return { success: false, error: "PIN_REQUIRED" }
+        }
+        const { data: pinSession } = await supabaseUser
+          .from("invoice_pin_sessions")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("device_id", deviceId)
+          .gt("expires_at", new Date().toISOString())
+          .single()
+
+        if (!pinSession) {
+          return { success: false, error: "PIN_REQUIRED" }
+        }
+      }
+    }
+
+    // 1. Verifica cache em memória se não foi solicitado refresh manual
+    if (!forceRefresh && metricsCache.has(period)) {
+      const cached = metricsCache.get(period)!
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return { success: true, data: cached.data }
+      }
+    }
+
     const supabaseAdmin = await createAdminClient()
     
     const { ASAAS_API_URL, ASAAS_API_KEY } = await import('@/lib/asaas')
@@ -40,7 +92,7 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
       currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
       
       prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999) // Último dia do mês passado
+      prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
       prevEnd = getEndOfDay(prevEnd)
     } else if (period === 'last_month') {
       currentStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
@@ -70,26 +122,25 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
       prevEnd = getEndOfDay(prevEnd)
     }
 
-    // --- FUNÇÕES DE BUSCA ---
-    
     const earliestStart = formatAsaasDate(prevStart)
     const latestEnd = formatAsaasDate(currentEnd)
     
-    // Função auxiliar para buscar com paginação
+    // Função auxiliar para buscar pagamentos com paginação segura e rápida
     const fetchAllPayments = async (paramsString: string = "") => {
       let allPayments: any[] = []
       let offset = 0
       const limit = 100
       let hasMore = true
+      let pageCount = 0
       
-      while (hasMore) {
+      while (hasMore && pageCount < 10) {
+        pageCount++
         const queryStr = paramsString ? `${paramsString}&limit=${limit}&offset=${offset}` : `limit=${limit}&offset=${offset}`
         const urlToFetch = `${ASAAS_API_URL}/payments?${queryStr}`
-        const res = await fetch(urlToFetch, { headers, cache: 'no-store' })
         
-        let text = "";
         try {
-          text = await res.text()
+          const res = await fetch(urlToFetch, { headers, cache: 'no-store' })
+          const text = await res.text()
           const data = JSON.parse(text)
           if (data && data.data && data.data.length > 0) {
             allPayments = allPayments.concat(data.data)
@@ -99,33 +150,38 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
             hasMore = false
           }
         } catch (e) {
-          console.error(`Asaas API Error parsing JSON. URL: ${urlToFetch}, Status: ${res.status} ${res.statusText}`)
-          console.error(`Raw response body: "${text}"`)
-          console.error(e)
+          console.error(`Asaas API Error fetching payments: ${urlToFetch}`, e)
           hasMore = false
         }
       }
       return allPayments
     }
 
-    // Busca absolutamente TODAS as cobranças (sem filtro de data/status na API) para evitar bugs da Sandbox
-    const allPayments = await fetchAllPayments()
-    
-    // Filtramos em memória
-    const paidPayments = allPayments.filter(p => p.status === 'RECEIVED')
+    const dateFilterQuery = `dueDate[ge]=${earliestStart}&dueDate[le]=${latestEnd}`
+
+    // 2. BUSCA PARALELIZADA COM Promise.all (Asaas + Perfis + WhatsApp + Auth)
+    const [allPayments, profilesRes, wppConnsRes, usersDataRes] = await Promise.all([
+      fetchAllPayments(dateFilterQuery),
+      supabaseAdmin.from('profiles').select('id, subscription_status'),
+      supabaseAdmin.from('whatsapp_connections').select('status'),
+      supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+    ])
+
+    const profiles = profilesRes.data || []
+    const wppConns = wppConnsRes.data || []
+    const allUsers = usersDataRes.data?.users || []
+
+    // Filtros em memória
+    const paidPayments = allPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED')
     const pendingPayments = allPayments.filter(p => p.status === 'PENDING')
     const overduePayments = allPayments.filter(p => p.status === 'OVERDUE')
 
-    // Dados do Supabase (Perfis)
-    const { data: profiles, error: profilesError } = await supabaseAdmin.from('profiles').select('*')
-    if (profilesError) throw new Error(profilesError.message)
-
-    // Dados do WhatsApp
-    const { data: wppConns } = await supabaseAdmin.from('whatsapp_connections').select('status')
-    const wppConnected = wppConns?.filter(c => c.status === 'connected' || c.status === 'CONNECTED' || c.status === 'conectado' || c.status === 'Conectado').length || 0
+    // Conexões WhatsApp
+    const wppConnected = wppConns.filter(c => 
+      c.status === 'connected' || c.status === 'CONNECTED' || c.status === 'conectado' || c.status === 'Conectado'
+    ).length
 
     // --- CÁLCULOS DO PERÍODO ATUAL ---
-    
     const isCurrentPeriod = (d: Date) => d >= currentStart && d <= currentEnd
     const isPrevPeriod = (d: Date) => d >= prevStart && d <= prevEnd
     
@@ -160,15 +216,11 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
     const currentActive = profiles.filter(p => p.subscription_status === 'active' || p.subscription_status === 'ativo' || p.subscription_status === 'Ativo').length
     const currentOverdue = profiles.filter(p => p.subscription_status === 'vencida').length
     const currentCancelled = profiles.filter(p => p.subscription_status === 'canceled' || p.subscription_status === 'cancelada').length
-    
-    const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
-    if (usersError) console.error("Error fetching auth users:", usersError)
-    const allUsers = usersData?.users || []
 
     const newClientsCurrent = allUsers.filter(u => u.created_at && isCurrentPeriod(new Date(u.created_at))).length
     const newClientsPrev = allUsers.filter(u => u.created_at && isPrevPeriod(new Date(u.created_at))).length
     
-    const iaActive = profiles.filter(p => p.subscription_status === 'active').length // Mock para IA
+    const iaActive = currentActive
 
     // --- GRÁFICO DE LINHA (Receita) ---
     const chartDataMap: Record<string, number> = {}
@@ -190,25 +242,33 @@ export async function getDashboardMetrics(period: 'current_month' | 'last_month'
     const chartData = sortedKeys.map(k => ({ label: k, receita: chartDataMap[k] }))
 
     // Retorno Consolidado
+    const resultData = {
+      financials: {
+        current: currentFinancials,
+        prev: prevFinancials
+      },
+      clients: {
+        total: totalCurrentClients,
+        active: currentActive,
+        overdue: currentOverdue,
+        cancelled: currentCancelled,
+        newCurrent: newClientsCurrent,
+        newPrev: newClientsPrev,
+        wppConnected,
+        iaActive
+      },
+      chartData
+    }
+
+    // Salva no cache do servidor
+    metricsCache.set(period, {
+      data: resultData,
+      timestamp: Date.now()
+    })
+
     return {
       success: true,
-      data: {
-        financials: {
-          current: currentFinancials,
-          prev: prevFinancials
-        },
-        clients: {
-          total: totalCurrentClients,
-          active: currentActive,
-          overdue: currentOverdue,
-          cancelled: currentCancelled,
-          newCurrent: newClientsCurrent,
-          newPrev: newClientsPrev,
-          wppConnected,
-          iaActive
-        },
-        chartData
-      }
+      data: resultData
     }
 
   } catch (error: any) {

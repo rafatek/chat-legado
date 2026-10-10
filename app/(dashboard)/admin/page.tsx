@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation"
+import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase-server"
 import { getAdminProfiles } from "@/lib/actions/admin"
 import { AdminClient } from "./admin-client"
@@ -19,7 +20,7 @@ export default async function AdminPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_admin")
+    .select("is_admin, invoice_pin")
     .eq("id", user.id)
     .single()
 
@@ -28,7 +29,30 @@ export default async function AdminPage() {
     redirect("/dashboard")
   }
 
-  // 2. Fetch all profiles using the secure admin server action
+  // 2. Verifica se possui PIN e se está desbloqueado
+  const hasPin = !!profile?.invoice_pin
+  let isPinUnlocked = !hasPin
+
+  if (hasPin) {
+    const cookieStore = await cookies()
+    const deviceId = cookieStore.get('device_id')?.value
+
+    if (deviceId) {
+      const { data: pinSession } = await supabase
+        .from('invoice_pin_sessions')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('device_id', deviceId)
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (pinSession) {
+        isPinUnlocked = true
+      }
+    }
+  }
+
+  // 3. Fetch all profiles using the secure admin server action
   const { success, data: profiles, error } = await getAdminProfiles()
 
   if (!success) {
@@ -53,7 +77,11 @@ export default async function AdminPage() {
         </p>
       </div>
 
-      <AdminClient initialProfiles={profiles || []} />
+      <AdminClient 
+        initialProfiles={profiles || []} 
+        hasPin={hasPin} 
+        initialPinUnlocked={isPinUnlocked} 
+      />
     </div>
   )
 }

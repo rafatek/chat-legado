@@ -4,26 +4,36 @@ import { useState, useEffect } from "react"
 import { getDashboardMetrics } from "@/lib/actions/dashboard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, TrendingUp, TrendingDown, Users, UserPlus, UserMinus, DollarSign, AlertCircle, Smartphone, BrainCircuit, Clock } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { Loader2, TrendingUp, TrendingDown, Users, UserPlus, UserMinus, DollarSign, AlertCircle, Smartphone, BrainCircuit, Clock, Wallet, RefreshCw, Lock } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
-export function AdminDashboard() {
+export function AdminDashboard({ onLock }: { onLock?: () => void }) {
   const [period, setPeriod] = useState<'current_month' | 'last_month' | 'last_30_days' | 'last_6_months'>('current_month')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [data, setData] = useState<any>(null)
 
-  useEffect(() => {
-    let mounted = true
-    setLoading(true)
-    getDashboardMetrics(period).then(res => {
-      if (mounted) {
-        if (res.success) {
-          setData(res.data)
-        }
-        setLoading(false)
+  const loadData = (p: typeof period, force: boolean = false) => {
+    if (force) setRefreshing(true)
+    else setLoading(true)
+    getDashboardMetrics(p, force).then(res => {
+      if (res.success) {
+        setData(res.data)
+      } else if (res.error === 'PIN_REQUIRED') {
+        if (onLock) onLock()
       }
+      setLoading(false)
+      setRefreshing(false)
+    }).catch(() => {
+      setLoading(false)
+      setRefreshing(false)
     })
-    return () => { mounted = false }
+  }
+
+  useEffect(() => {
+    loadData(period, false)
   }, [period])
 
   if (loading && !data) {
@@ -41,6 +51,9 @@ export function AdminDashboard() {
   const c = data.clients
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
+
+  const totalMesCurrent = (fCurrent.recebido || 0) + (fCurrent.aReceber || 0) + (fCurrent.inadimplencia || 0)
+  const totalMesPrev = (fPrev.recebido || 0) + (fPrev.aReceber || 0) + (fPrev.inadimplencia || 0)
 
   const TrendIndicator = ({ current, prev, isNegativeGood = false, isCurrency = false }: { current: number, prev: number, isNegativeGood?: boolean, isCurrency?: boolean }) => {
     const diff = current - prev
@@ -76,21 +89,66 @@ export function AdminDashboard() {
           <h2 className="text-xl font-bold text-white">Visão Geral</h2>
           <p className="text-sm text-muted-foreground">Monitore a saúde do seu negócio em tempo real.</p>
         </div>
-        <Select value={period} onValueChange={(val: any) => setPeriod(val)}>
-          <SelectTrigger className="w-[180px] bg-black border-white/20">
-            <SelectValue placeholder="Selecione o período" />
-          </SelectTrigger>
-          <SelectContent className="bg-zinc-950 border-white/20">
-            <SelectItem value="current_month">Mês Atual</SelectItem>
-            <SelectItem value="last_month">Mês Passado</SelectItem>
-            <SelectItem value="last_30_days">Últimos 30 dias</SelectItem>
-            <SelectItem value="last_6_months">Últimos 6 meses</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={period} onValueChange={(val: any) => setPeriod(val)}>
+            <SelectTrigger className="w-[180px] bg-black border-white/20">
+              <SelectValue placeholder="Selecione o período" />
+            </SelectTrigger>
+            <SelectContent className="bg-zinc-950 border-white/20">
+              <SelectItem value="current_month">Mês Atual</SelectItem>
+              <SelectItem value="last_month">Mês Passado</SelectItem>
+              <SelectItem value="last_30_days">Últimos 30 dias</SelectItem>
+              <SelectItem value="last_6_months">Últimos 6 meses</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => loadData(period, true)}
+            disabled={loading || refreshing}
+            className="border-white/20 bg-black hover:bg-white/10 text-white shrink-0"
+            title="Atualizar dados agora"
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-[#00A3FF]")} />
+          </Button>
+          {onLock && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onLock}
+              className="border-white/20 bg-black hover:bg-white/10 text-xs text-gray-300 hover:text-white flex items-center gap-1.5 h-9 px-3 shrink-0"
+              title="Bloquear visualização do Dashboard"
+            >
+              <Lock className="h-3.5 w-3.5 text-yellow-400" />
+              <span className="hidden sm:inline">Bloquear</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* FINANCE CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-black/40 border-[#00A3FF]/40 backdrop-blur-md shadow-[0_0_20px_rgba(0,163,255,0.1)]">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-sm font-medium text-[#00A3FF]">
+                {period === 'current_month' ? 'Total do Mês' : 'Total do Período'}
+              </CardTitle>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Previsão total de recebimento</p>
+            </div>
+            <Wallet className="h-4 w-4 text-[#00A3FF]" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-white">{formatCurrency(totalMesCurrent)}</div>
+            <div className="flex items-center mt-1">
+              <TrendIndicator current={totalMesCurrent} prev={totalMesPrev} isCurrency={true} />
+            </div>
+            <div className="mt-2 text-[11px] text-zinc-400 font-mono">
+              Recebido + A Receber + Inadimplência
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="bg-black/40 border-emerald-500/30 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-emerald-400">Total Recebido</CardTitle>

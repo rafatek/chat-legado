@@ -27,24 +27,26 @@ export async function getAdminProfiles() {
         await verifyAdmin()
         const supabaseAdmin = await createAdminClient()
 
-        // 1. Fetch all profiles explicitly without secret fields like invoice_pin
-        const { data: profilesData, error: profilesError } = await supabaseAdmin
-            .from("profiles")
-            .select("id, full_name, email, subscription_status, server_id, is_admin, updated_at, cpf_cnpj")
+        // 1. Fetch profiles & whatsapp_connections in parallel
+        const [profilesRes, waRes] = await Promise.all([
+            supabaseAdmin
+                .from("profiles")
+                .select("id, full_name, email, subscription_status, server_id, is_admin, updated_at, cpf_cnpj, asaas_customer_id, next_due_date"),
+            supabaseAdmin
+                .from("whatsapp_connections")
+                .select("user_id, status")
+        ])
 
-        if (profilesError) {
-            console.error(`Error fetching profiles: [${profilesError.code}] ${profilesError.message}`)
-            return { success: false, error: profilesError.message }
+        const profilesData = profilesRes.data || []
+        const waData = waRes.data || []
+
+        if (profilesRes.error) {
+            console.error(`Error fetching profiles: [${profilesRes.error.code}] ${profilesRes.error.message}`)
+            return { success: false, error: profilesRes.error.message }
         }
 
-        // 2. Fetch all whatsapp_connections
-        const { data: waData, error: waError } = await supabaseAdmin
-            .from("whatsapp_connections")
-            .select("user_id, status")
-
-        if (waError) {
-            console.error(`Error fetching whatsapp connections: [${waError.code}] ${waError.message}`)
-            // We don't fail the whole request, just log it.
+        if (waRes.error) {
+            console.error(`Error fetching whatsapp connections: [${waRes.error.code}] ${waRes.error.message}`)
         }
 
         // 3. Map status to profiles (profiles.id == whatsapp_connections.user_id)
@@ -281,20 +283,91 @@ export async function deleteAdminUser(userId: string) {
             .single()
 
         if (existingConn?.instance_name) {
-            const { deleteWhatsappInstance } = await import("@/lib/actions/whatsapp")
-            await deleteWhatsappInstance(existingConn.instance_name)
+            try {
+                const { deleteWhatsappInstance } = await import("@/lib/actions/whatsapp")
+                await deleteWhatsappInstance(existingConn.instance_name)
+            } catch (e) {
+                console.error("Falha ao deletar instância WhatsApp na API:", e)
+            }
         }
 
-        // 2. Limpeza forçada de tabelas dependentes (Evita erro de Foreign Key constraint caso falte ON DELETE CASCADE no banco)
-        await supabaseAdmin.from("whatsapp_connections").delete().eq("user_id", userId)
-        await supabaseAdmin.from("profiles").delete().eq("id", userId)
+        // Função utilitária para deleção segura (ignora tabelas inexistentes no schema)
+        const safeDelete = async (table: string, column: string, value: string) => {
+            try {
+                const { error } = await supabaseAdmin.from(table).delete().eq(column, value)
+                if (error && error.code !== 'PGRST205' && error.code !== 'PGRST204') {
+                    console.warn(`Aviso ao limpar ${table}:`, error.message)
+                }
+            } catch (err: any) {
+                console.warn(`Exceção ao limpar ${table}:`, err?.message)
+            }
+        }
+
+        // 2. Limpeza profunda em todas as tabelas dependentes (ordem topológica para evitar erros de FK constraint)
+        
+        // 2.1 Chat, Atendimento & Conexão
+        await safeDelete("whatsapp_connections", "user_id", userId)
+        await safeDelete("messages", "user_id", userId)
+        await safeDelete("conversations", "user_id", userId)
+
+        // 2.2 Agendamentos, Gatilhos & Respostas Rápidas
+        await safeDelete("agendamentos", "user_id", userId)
+        await safeDelete("gatilhos", "user_id", userId)
+        await safeDelete("quick_replies", "user_id", userId)
+
+        // 2.3 Remarketing
+        await safeDelete("remarketing_leads", "user_id", userId)
+        await safeDelete("remarketing_configs", "user_id", userId)
+
+        // 2.4 Agentes de IA
+        await safeDelete("agents_configs", "user_id", userId)
+        await safeDelete("agents_agendamento_config", "user_id", userId)
+        await safeDelete("agents_assist", "user_id", userId)
+
+        // 2.5 Campanhas e dependências
+        const { data: userCampaigns } = await supabaseAdmin.from("campaigns").select("id").eq("user_id", userId)
+        if (userCampaigns && userCampaigns.length > 0) {
+            const campIds = userCampaigns.map(c => c.id)
+            await supabaseAdmin.from("campaign_leads").delete().in("campaign_id", campIds)
+        }
+        await safeDelete("campaigns", "user_id", userId)
+        await safeDelete("folders", "user_id", userId)
+
+        // 2.6 Leads, Etiquetas e Kanban
+        const { data: userLeads } = await supabaseAdmin.from("leads").select("id").eq("user_id", userId)
+        if (userLeads && userLeads.length > 0) {
+            const leadIds = userLeads.map(l => l.id)
+            await supabaseAdmin.from("lead_labels").delete().in("lead_id", leadIds)
+        }
+        await safeDelete("leads", "user_id", userId)
+        await safeDelete("labels", "user_id", userId)
+        await safeDelete("kanban_columns", "user_id", userId)
+
+        // 2.7 Webhooks & Módulos Extras
+        await safeDelete("capture_webhooks", "user_id", userId)
+        await safeDelete("prospecting_configs", "user_id", userId)
+
+        // 2.8 Faturamento & PIN
+        await safeDelete("invoice_pin_sessions", "user_id", userId)
+        await safeDelete("invoice_items", "user_id", userId)
+        await safeDelete("invoices", "user_id", userId)
+        await safeDelete("billing_cycles", "user_id", userId)
+
+        // 2.9 Deleta o registro em profiles
+        const { error: profileError } = await supabaseAdmin.from("profiles").delete().eq("id", userId)
+        if (profileError && profileError.code !== 'PGRST116') {
+            console.error("Erro ao deletar profile:", profileError)
+            return { success: false, error: profileError.message }
+        }
 
         // 3. Deleta o usuário da tabela de autenticação
-        const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
         
-        if (error) {
-            console.error("Error deleting user:", error)
-            return { success: false, error: error.message }
+        if (authError) {
+            if (!authError.message.toLowerCase().includes("not found")) {
+                console.error("Error deleting auth user:", authError)
+                return { success: false, error: authError.message }
+            }
         }
 
         revalidatePath("/admin")
