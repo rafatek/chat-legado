@@ -8,7 +8,7 @@ import { ptBR } from "date-fns/locale"
 import { Shield, ShieldAlert, MoreHorizontal, User, Check, X, ShieldCheck, Mail, Power, Edit, Trash2, Plus, QrCode, RefreshCw, Loader2, AlertCircle, AlertTriangle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { updateSubscriptionStatus, toggleAdminRole, updateProfileData, deleteAdminUser, createAdminUser, createAsaasInvoice, fetchUserSubscription, postponeInvoice, fetchInvoiceDueDate, linkAsaasAccount } from "@/lib/actions/admin"
+import { updateSubscriptionStatus, toggleAdminRole, updateProfileData, deleteAdminUser, createAdminUser, createAsaasInvoice, fetchUserSubscription, postponeInvoice, fetchInvoiceDueDate, linkAsaasAccount, adminSyncWhatsappStatus } from "@/lib/actions/admin"
 import { AdminDashboard } from "./admin-dashboard"
 import { AdminPinGate } from "./admin-pin-gate"
 import { Lock } from "lucide-react"
@@ -483,6 +483,25 @@ export function AdminClient({
     })
   }
 
+  const [isSyncingWa, setIsSyncingWa] = useState(false)
+
+  const handleSyncWhatsapp = async () => {
+    setIsSyncingWa(true)
+    try {
+      const res = await adminSyncWhatsappStatus()
+      if (res.success) {
+        toast.success(`Sincronização concluída! ${res.connectedCount} conectadas mantidas. ${res.deletedCount} instâncias desconectadas foram excluídas da Uazapi liberando vagas no plano.`, { duration: 6000 })
+        router.refresh()
+      } else {
+        toast.error("Erro na sincronização: " + res.error)
+      }
+    } catch (e: any) {
+      toast.error("Erro ao sincronizar conexões: " + (e.message || "Falha"))
+    } finally {
+      setIsSyncingWa(false)
+    }
+  }
+
   const handleDeleteUser = (userId: string, userName: string) => {
     if (!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente o usuário ${userName}? Esta ação não pode ser desfeita e removerá todos os dados atrelados a ele.`)) return
 
@@ -590,6 +609,17 @@ export function AdminClient({
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+
+            <Button 
+              type="button"
+              variant="outline"
+              onClick={handleSyncWhatsapp} 
+              disabled={isSyncingWa}
+              className="w-full sm:w-auto rounded-full border-zinc-700 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-200 transition-all duration-300"
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", isSyncingWa && "animate-spin text-[#00A3FF]")} />
+              {isSyncingWa ? "Sincronizando & Limpando..." : "Sincronizar & Limpar WhatsApp"}
+            </Button>
 
             <Button onClick={() => setIsCreateDialogOpen(true)} className="w-full sm:w-auto rounded-full bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white font-bold transition-all duration-300 shadow-[0_0_15px_rgba(0,163,255,0.4)] hover:shadow-[0_0_25px_rgba(0,163,255,0.6)]">
               <Plus className="mr-2 h-4 w-4" /> Novo Usuário

@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { toggleLeadRemarketingAction } from "@/lib/actions/remarketing"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1187,7 +1188,7 @@ export default function AtendimentoPage() {
   // ---- RMK Functions ----
   useEffect(() => {
     if (!selectedConv?.lead_id) {
-        setRmkEnabled(true)
+        setRmkEnabled(false)
         return
     }
     const fetchRmkState = async () => {
@@ -1199,9 +1200,9 @@ export default function AtendimentoPage() {
                 .eq('lead_id', selectedConv.lead_id)
                 .maybeSingle()
             if (!error && data) {
-                setRmkEnabled(data.rmk_enabled !== false)
+                setRmkEnabled(data.rmk_enabled === true)
             } else {
-                setRmkEnabled(true)
+                setRmkEnabled(false)
             }
         } catch (err) {
             console.error("Erro ao buscar RMK:", err)
@@ -1217,29 +1218,18 @@ export default function AtendimentoPage() {
     setIsLoadingLead(false)
     setIsRmkLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user?.id) throw new Error("Não autenticado")
-      
       const newEnabled = !rmkEnabled
-      const rmkPayload: any = {
-        lead_id: selectedConv.lead_id,
-        user_id: session.user.id,
-        rmk_enabled: newEnabled,
-      }
-      if (newEnabled) {
-        rmkPayload.remarketing_status = "none"
-        rmkPayload.remarketing_attempts = 0
-        rmkPayload.last_remarketing_at = new Date().toISOString()
-      }
+      const res = await toggleLeadRemarketingAction(selectedConv.lead_id, newEnabled)
       
-      const { error } = await supabase.from('remarketing_leads').upsert(rmkPayload, { onConflict: "lead_id" })
-      if (error) throw error
+      if (!res.success) {
+        throw new Error(res.error || "Falha ao atualizar RMK")
+      }
       
       setRmkEnabled(newEnabled)
-      toast.success(newEnabled ? "RMK ativado para o lead" : "RMK desativado para o lead")
+      toast.success(newEnabled ? "RMK ativado! Horários agendados na fila." : "RMK desativado! Agendamentos futuros cancelados.")
     } catch (err: any) {
       console.error(err)
-      toast.error("Erro ao alterar RMK")
+      toast.error("Erro ao alterar RMK: " + (err.message || "Falha"))
     } finally {
       setIsRmkLoading(false)
     }

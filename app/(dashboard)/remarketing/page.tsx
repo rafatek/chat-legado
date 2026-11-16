@@ -7,421 +7,182 @@ import {
   Save,
   Loader2,
   BrainCircuit,
-  MessageSquare,
-  Flame,
-  ShieldOff,
-  TrendingUp,
   Power,
+  Clock,
+  Plus,
+  Trash2,
+  Shield,
+  Zap,
   Info,
+  CheckCircle2,
   Calendar,
   RefreshCw,
-  Search,
-  UserX,
-  UserCheck,
+  Phone,
+  User,
+  AlertCircle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { toast } from "sonner"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface RemarketingConfig {
-  id?: string
-  user_id: string
-  is_active: boolean
-  max_attempts: number
-  ai_prompt: string
-  template_cold: string
-  template_interested: string
-  template_objection: string
-}
-
-interface RemarketingStats {
-  active: number    // sent_1 | sent_2 | sent_3 | sent_4
-  optout: number
-  converted: number
-  total: number
-}
-
-interface SearchResultLead {
-  id: string
-  full_name: string
-  whatsapp: string
-  rmk: {
-    lead_id?: string
-    rmk_enabled?: boolean
-    remarketing_status?: string
-    remarketing_attempts?: number
-  } | null
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const ATTEMPTS_OPTIONS = [1, 2, 3, 4]
-
-const ATTEMPTS_LABELS: Record<number, string> = {
-  1: "Semana 1",
-  2: "Semanas 1 e 2",
-  3: "Semanas 1, 2 e 3",
-  4: "Semanas 1, 2, 3 e 4",
-}
-
-const PLACEHOLDER_AI_PROMPT = `Você é um consultor especializado em reengajamento de leads.
-O lead abaixo não respondeu há alguns dias. Sua missão é retomar o contato de forma natural, 
-sem ser invasivo, demonstrando valor e curiosidade genuína.
-
-Regras obrigatórias:
-- Responda APENAS em JSON estruturado com: { "mensagem": "...", "estagio_funil": "cold|interested|objection", "intencao_optout": false }
-- Seja direto, humano e conciso (máx. 3 linhas)
-- Nunca mencione que é uma automação
-- Se o lead demonstrar desinteresse claro, retorne intencao_optout: true`
-
-function getRmkStatusLabel(rmk: SearchResultLead["rmk"]): { label: string; color: string } {
-  if (!rmk || rmk.rmk_enabled === false) return { label: "RMK Inativo", color: "text-muted-foreground bg-accent/50 border-border" }
-  const status = rmk.remarketing_status
-  if (!status || status === "none") return { label: "Aguardando disparo", color: "text-muted-foreground bg-accent/50 border-border" }
-  if (["sent_1", "sent_2", "sent_3", "sent_4"].includes(status)) return { label: `Em sequência (${rmk.remarketing_attempts}x)`, color: "text-[#00A3FF] bg-[#00A3FF]/10 border-[#00A3FF]/20" }
-  if (status === "optout") return { label: "Opt-out", color: "text-red-500 bg-red-500/10 border-red-500/20" }
-  if (status === "converted") return { label: "Convertido", color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" }
-  return { label: status, color: "text-muted-foreground bg-accent/50 border-border" }
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+  getRemarketingConfig,
+  saveRemarketingConfig,
+  getUpcomingRemarketingQueue,
+  cancelLeadRemarketingQueue,
+  TimeRule,
+  RemarketingConfigData
+} from "@/lib/actions/remarketing"
 
 export default function RemarketingPage() {
-  const [userId, setUserId] = useState<string | null>(null)
-  const [config, setConfig] = useState<RemarketingConfig | null>(null)
-  const [stats, setStats] = useState<RemarketingStats | null>(null)
+  const [config, setConfig] = useState<RemarketingConfigData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isRefreshingStats, setIsRefreshingStats] = useState(false)
 
-  // ── Lead Search State ────────────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<SearchResultLead[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [togglingLeadId, setTogglingLeadId] = useState<string | null>(null)
+  // Queue state
+  const [queue, setQueue] = useState<any[]>([])
+  const [totalQueueCount, setTotalQueueCount] = useState<number>(0)
+  const [isLoadingQueue, setIsLoadingQueue] = useState(false)
+  const [cancelingId, setCancelingId] = useState<string | null>(null)
 
-  // ── Bulk Actions State ───────────────────────────────────────────────────────
-  const [isEnablingAll, setIsEnablingAll] = useState(false)
-  const [isDisablingAll, setIsDisablingAll] = useState(false)
-  const [showEnableAllConfirm, setShowEnableAllConfirm] = useState(false)
-  const [showDisableAllConfirm, setShowDisableAllConfirm] = useState(false)
+  // New Rule inputs
+  const [newDays, setNewDays] = useState<string>("0")
+  const [newHours, setNewHours] = useState<string>("2")
+  const [newMinutes, setNewMinutes] = useState<string>("0")
 
-  // ── Fetch user ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) setUserId(user.id)
-    }
-    init()
-  }, [])
-
-  // ── Load config + stats ─────────────────────────────────────────────────────
-  const loadData = useCallback(async (uid: string) => {
+  // Carrega configuração
+  const loadConfig = useCallback(async () => {
     setIsLoading(true)
     try {
-      const { data: configData } = await supabase
-        .from("remarketing_configs")
-        .select("*")
-        .eq("user_id", uid)
-        .single()
-
-      if (configData) {
-        setConfig(configData)
+      const res = await getRemarketingConfig()
+      if (res.success && res.data) {
+        setConfig(res.data)
       } else {
-        setConfig({
-          user_id: uid,
-          is_active: false,
-          max_attempts: 3,
-          ai_prompt: "",
-          template_cold: "",
-          template_interested: "",
-          template_objection: "",
-        })
+        toast.error("Erro ao carregar configurações: " + res.error)
       }
-
-      await fetchStats(uid)
-    } catch (err) {
-      console.error(err)
-      toast.error("Erro ao carregar configurações")
+    } catch (err: any) {
+      toast.error("Falha ao carregar: " + err.message)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  useEffect(() => {
-    if (userId) loadData(userId)
-  }, [userId, loadData])
-
-  // ── Stats query ─────────────────────────────────────────────────────────────
-  const fetchStats = async (uid: string) => {
-    setIsRefreshingStats(true)
+  // Carrega fila de agendamentos
+  const loadQueue = useCallback(async () => {
+    setIsLoadingQueue(true)
     try {
-      const { data, error } = await supabase
-        .from("remarketing_leads")
-        .select("remarketing_status")
-        .eq("user_id", uid)
-
-      if (error) throw error
-
-      const rows = data || []
-      const active = rows.filter((r) =>
-        ["sent_1", "sent_2", "sent_3", "sent_4"].includes(r.remarketing_status)
-      ).length
-      const optout = rows.filter((r) => r.remarketing_status === "optout").length
-      const converted = rows.filter((r) => r.remarketing_status === "converted").length
-
-      setStats({ active, optout, converted, total: rows.length })
-    } catch (err) {
-      console.error("Erro ao buscar stats:", err)
+      const res = await getUpcomingRemarketingQueue()
+      if (res.success && res.data) {
+        setQueue(res.data)
+        setTotalQueueCount(res.totalCount ?? res.data.length)
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar fila:", e)
     } finally {
-      setIsRefreshingStats(false)
+      setIsLoadingQueue(false)
     }
-  }
+  }, [])
 
-  // ── Save ────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    loadConfig()
+    loadQueue()
+  }, [loadConfig, loadQueue])
+
+  // Salvar configurações
   const handleSave = async () => {
-    if (!config || !userId) return
+    if (!config) return
     setIsSaving(true)
     try {
-      const payload = {
-        user_id: userId,
+      const res = await saveRemarketingConfig({
         is_active: config.is_active,
-        max_attempts: config.max_attempts,
-        ai_prompt: config.ai_prompt,
-        template_cold: config.template_cold,
-        template_interested: config.template_interested,
-        template_objection: config.template_objection,
-        updated_at: new Date().toISOString(),
+        agent_mode: config.agent_mode,
+        time_rules: config.time_rules,
+        ai_prompt: config.ai_prompt
+      })
+
+      if (res.success) {
+        toast.success("Configurações de Remarketing salvas com sucesso!")
+      } else {
+        toast.error("Erro ao salvar: " + res.error)
       }
-
-      const { error } = await supabase
-        .from("remarketing_configs")
-        .upsert(payload, { onConflict: "user_id" })
-
-      if (error) throw error
-      toast.success("Configurações salvas com sucesso!")
     } catch (err: any) {
-      console.error(err)
       toast.error("Erro ao salvar: " + err.message)
     } finally {
       setIsSaving(false)
     }
   }
 
-  // ── Lead Search ─────────────────────────────────────────────────────────────
-  const handleSearchLeads = async () => {
-    if (!userId || !searchQuery.trim()) return
-    setIsSearching(true)
-    try {
-      const { data: leadsData, error: leadsError } = await supabase
-        .from("leads")
-        .select("id, full_name, whatsapp")
-        .eq("user_id", userId)
-        .or(`full_name.ilike.%${searchQuery}%,whatsapp.ilike.%${searchQuery}%`)
-        .limit(20)
+  // Adicionar Regra de Tempo
+  const handleAddTimeRule = () => {
+    if (!config) return
+    const days = parseInt(newDays, 10) || 0
+    const hours = parseInt(newHours, 10) || 0
+    const minutes = parseInt(newMinutes, 10) || 0
 
-      if (leadsError) throw leadsError
-      const leads = leadsData || []
-
-      if (leads.length === 0) {
-        setSearchResults([])
-        toast.info("Nenhum lead encontrado")
-        return
-      }
-
-      const leadIds = leads.map((l: any) => l.id)
-      const { data: rmkData } = await supabase
-        .from("remarketing_leads")
-        .select("lead_id, rmk_enabled, remarketing_status, remarketing_attempts")
-        .in("lead_id", leadIds)
-
-      const rmkMap = new Map((rmkData || []).map((r: any) => [r.lead_id, r]))
-      setSearchResults(leads.map((lead: any) => ({
-        ...lead,
-        rmk: rmkMap.get(lead.id) || null,
-      })))
-    } catch (err) {
-      console.error(err)
-      toast.error("Erro ao buscar leads")
-    } finally {
-      setIsSearching(false)
+    const totalMinutes = (days * 1440) + (hours * 60) + minutes
+    if (totalMinutes <= 0) {
+      toast.error("O tempo da regra deve ser maior que zero minutos.")
+      return
     }
+
+    const parts: string[] = []
+    if (days > 0) parts.push(`${days} ${days === 1 ? 'dia' : 'dias'}`)
+    if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hora' : 'horas'}`)
+    if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`)
+    const label = `Após ${parts.join(" e ")}`
+
+    const newRule: TimeRule = {
+      id: String(Date.now()),
+      days,
+      hours,
+      minutes,
+      label
+    }
+
+    const updatedRules = [...(config.time_rules || []), newRule]
+    setConfig({
+      ...config,
+      time_rules: updatedRules
+    })
+
+    // Reset inputs
+    setNewDays("0")
+    setNewHours("1")
+    setNewMinutes("0")
+    toast.success(`Regra "${label}" adicionada! Lembre-se de salvar.`)
   }
 
-  // ── Toggle RMK por Lead ─────────────────────────────────────────────────────
-  const handleToggleLeadRmk = async (leadId: string, rmk: SearchResultLead["rmk"]) => {
-    if (!userId) return
-    setTogglingLeadId(leadId)
-    try {
-      const isCurrentlyEnabled = rmk?.rmk_enabled !== false
-      const newEnabled = !isCurrentlyEnabled
-
-      const payload: any = {
-        lead_id: leadId,
-        user_id: userId,
-        rmk_enabled: newEnabled,
-      }
-
-      if (newEnabled) {
-        payload.remarketing_status = "none"
-        payload.remarketing_attempts = 0
-        payload.last_remarketing_at = null
-      }
-
-      const { error } = await supabase
-        .from("remarketing_leads")
-        .upsert(payload, { onConflict: "lead_id" })
-
-      if (error) throw error
-
-      setSearchResults(prev => prev.map(lead =>
-        lead.id === leadId
-          ? {
-              ...lead,
-              rmk: {
-                ...(lead.rmk || {}),
-                rmk_enabled: newEnabled,
-                remarketing_status: newEnabled ? "none" : lead.rmk?.remarketing_status,
-                remarketing_attempts: newEnabled ? 0 : lead.rmk?.remarketing_attempts,
-              }
-            }
-          : lead
-      ))
-
-      toast.success(newEnabled ? "RMK ativado para o lead" : "RMK desativado para o lead")
-    } catch (err: any) {
-      console.error(err)
-      toast.error("Erro ao alterar: " + err.message)
-    } finally {
-      setTogglingLeadId(null)
-    }
+  // Remover Regra de Tempo
+  const handleRemoveTimeRule = (indexToRemove: number) => {
+    if (!config) return
+    const updated = config.time_rules.filter((_, idx) => idx !== indexToRemove)
+    setConfig({
+      ...config,
+      time_rules: updated
+    })
   }
 
-  // ── Enable All Leads ─────────────────────────────────────────────────────────
-  const handleEnableAll = async () => {
-    if (!userId) return
-    setIsEnablingAll(true)
+  // Cancelar agendamento de lead da fila
+  const handleCancelLeadQueue = async (leadId: string, itemQueueId: string) => {
+    if (!config?.user_id) return
+    setCancelingId(itemQueueId)
     try {
-      // Busca apenas leads desativados manualmente, excluindo optout e convertidos
-      const { data: toEnable, error } = await supabase
-        .from('remarketing_leads')
-        .select('lead_id')
-        .eq('user_id', userId)
-        .eq('rmk_enabled', false)
-        .not('remarketing_status', 'in', '(optout,converted)')
-
-      if (error) throw error
-
-      if (!toEnable || toEnable.length === 0) {
-        toast.info('Nenhum lead desativado para reativar.')
-        setShowEnableAllConfirm(false)
-        return
+      const res = await cancelLeadRemarketingQueue(leadId, config.user_id)
+      if (res.success) {
+        toast.success("Remarketing cancelado e agendamentos futuros removidos!")
+        setQueue(prev => prev.filter(q => q.lead_id !== leadId && q.id !== itemQueueId))
+      } else {
+        toast.error("Erro ao cancelar: " + res.error)
       }
-
-      const payload = toEnable.map((r: any) => ({
-        lead_id: r.lead_id,
-        user_id: userId,
-        rmk_enabled: true,
-        remarketing_status: 'none',
-        remarketing_attempts: 0,
-        last_remarketing_at: null,
-      }))
-
-      const { error: upsertError } = await supabase
-        .from('remarketing_leads')
-        .upsert(payload, { onConflict: 'lead_id' })
-
-      if (upsertError) throw upsertError
-
-      toast.success(`RMK ativado para ${payload.length} lead(s)!`)
-      if (userId) fetchStats(userId)
-      setSearchResults([])
-      setSearchQuery('')
-    } catch (err: any) {
-      console.error(err)
-      toast.error('Erro ao ativar: ' + err.message)
+    } catch (e: any) {
+      toast.error("Falha ao cancelar: " + e.message)
     } finally {
-      setIsEnablingAll(false)
-      setShowEnableAllConfirm(false)
+      setCancelingId(null)
     }
   }
-
-  // ── Disable All Leads ────────────────────────────────────────────────────────
-  const handleDisableAll = async () => {
-    if (!userId) return
-    setIsDisablingAll(true)
-    try {
-      // 1. Desativa todas as linhas existentes na tabela
-      const { error: updateError } = await supabase
-        .from('remarketing_leads')
-        .update({ rmk_enabled: false })
-        .eq('user_id', userId)
-
-      if (updateError) throw updateError
-
-      // 2. Busca todos os leads do usuário
-      const { data: allLeads, error: leadsError } = await supabase
-        .from('leads')
-        .select('id')
-        .eq('user_id', userId)
-
-      if (leadsError) throw leadsError
-
-      // 3. Busca os que já têm linha (após a atualização acima)
-      const { data: existing, error: existingError } = await supabase
-        .from('remarketing_leads')
-        .select('lead_id')
-        .eq('user_id', userId)
-
-      if (existingError) throw existingError
-
-      // 4. Insere linhas desativadas para leads que ainda não tinham registro
-      const existingIds = new Set((existing || []).map((r: any) => r.lead_id))
-      const toInsert = (allLeads || [])
-        .filter((l: any) => !existingIds.has(l.id))
-        .map((l: any) => ({
-          lead_id: l.id,
-          user_id: userId,
-          rmk_enabled: false,
-          remarketing_status: 'none',
-          remarketing_attempts: 0,
-        }))
-
-      if (toInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from('remarketing_leads')
-          .insert(toInsert)
-        if (insertError) throw insertError
-      }
-
-      toast.success('RMK desativado para todos os leads!')
-      if (userId) fetchStats(userId)
-      setSearchResults([])
-      setSearchQuery('')
-    } catch (err: any) {
-      console.error(err)
-      toast.error('Erro ao desativar: ' + err.message)
-    } finally {
-      setIsDisablingAll(false)
-      setShowDisableAllConfirm(false)
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -435,54 +196,43 @@ export default function RemarketingPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-y-auto custom-scrollbar text-foreground">
-
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-6 md:p-8 gap-4 border-b border-border flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Target className="h-6 w-6 text-[#00A3FF]" />
-            Remarketing Automático
+            Configuração de Remarketing
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Reengaje leads silenciosos automaticamente com inteligência artificial.
+            Defina o comportamento do agente, intervalos de tempo e instruções de reengajamento.
           </p>
         </div>
 
         <Button
           onClick={handleSave}
           disabled={isSaving}
-          className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white gap-2 h-10 px-5 flex-shrink-0"
+          className="bg-[#00A3FF] hover:bg-[#00A3FF]/80 text-white gap-2 h-10 px-5 flex-shrink-0 font-semibold shadow-[0_0_15px_rgba(0,163,255,0.4)]"
         >
-          {isSaving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Salvar Configurações
         </Button>
       </div>
 
       <div className="p-6 md:p-8 space-y-8 max-w-5xl mx-auto w-full">
-
-        {/* ── Seção 1 — Controle Principal ────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Power className="h-4 w-4 text-[#00A3FF]" />
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">
-              Controle Principal
-            </h2>
-          </div>
-
-          {/* Toggle is_active */}
-          <div className="flex items-center justify-between p-4 bg-accent/30 rounded-xl border border-border">
-            <div>
-              <p className="text-foreground font-medium">Serviço de Remarketing</p>
-              <p className="text-muted-foreground text-xs mt-0.5">
-                Quando ativo, o N8N irá processar os leads elegíveis automaticamente.
+        {/* ── 1. Controle Principal (Chave Geral) ────────────────────────────── */}
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Power className="h-5 w-5 text-[#00A3FF]" />
+                <h2 className="text-base font-semibold text-foreground">Serviço de Remarketing</h2>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Chave mestre para ativar ou desativar o fluxo de remarketing para todos os seus leads.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className={cn("text-xs font-semibold", config.is_active ? "text-emerald-500" : "text-muted-foreground")}>
+              <span className={cn("text-xs font-bold uppercase", config.is_active ? "text-emerald-500" : "text-muted-foreground")}>
                 {config.is_active ? "ATIVO" : "INATIVO"}
               </span>
               <Switch
@@ -492,384 +242,283 @@ export default function RemarketingPage() {
               />
             </div>
           </div>
-
-          {/* Max Attempts */}
-          <div className="space-y-3">
-            <Label className="text-muted-foreground text-xs uppercase tracking-wider block">
-              Número de Tentativas
-            </Label>
-            <div className="flex gap-3">
-              {ATTEMPTS_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setConfig({ ...config, max_attempts: n })}
-                  className={cn(
-                    "flex-1 py-3 rounded-xl border text-sm font-bold transition-all",
-                    config.max_attempts === n
-                      ? "bg-[#00A3FF]/10 border-[#00A3FF]/40 text-[#00A3FF]"
-                      : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/50"
-                  )}
-                >
-                  {n}x
-                  <span className="block text-[10px] font-normal opacity-60 mt-0.5">
-                    {ATTEMPTS_LABELS[n]}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Info Banner */}
-          <div className="flex items-start gap-3 bg-[#00A3FF]/5 border border-[#00A3FF]/10 rounded-xl p-4">
-            <Calendar className="h-4 w-4 text-[#00A3FF] flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-muted-foreground leading-relaxed">
-              <span className="text-[#00A3FF] font-semibold">Agendamento automático:</span>{" "}
-              Disparos ocorrem <strong className="text-foreground">toda quarta-feira às 09:00</strong>.
-              O gatilho é definido como <strong className="text-foreground">lead sem resposta após o último contato da empresa</strong>.
-            </div>
-          </div>
         </div>
 
-        {/* ── Seção 2 — Cérebro da IA ──────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <BrainCircuit className="h-4 w-4 text-purple-500" />
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">
-              Cérebro da IA
-            </h2>
-          </div>
-
-          <div className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground" />
-            <p>
-              Escreva o prompt que guia a IA ao recontatar um lead silencioso.
-              A IA <strong className="text-foreground">sempre devolve um JSON estruturado</strong> com a mensagem,
-              o estágio do funil e a intenção de opt-out.
-            </p>
-          </div>
-
-          <div className="relative">
-            <textarea
-              value={config.ai_prompt}
-              onChange={(e) => setConfig({ ...config, ai_prompt: e.target.value })}
-              placeholder={PLACEHOLDER_AI_PROMPT}
-              rows={10}
-              className="w-full resize-y rounded-xl bg-background border border-input p-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50 custom-scrollbar leading-relaxed font-mono"
-            />
-            <span className="absolute bottom-3 right-3 text-[10px] text-muted-foreground">
-              {config.ai_prompt.length} chars
-            </span>
-          </div>
-        </div>
-
-        {/* ── Seção 3 — Templates de Fallback ──────────────────────────────── */}
+        {/* ── 2. Modo do Agente (Passivo vs Proativo) ───────────────────────── */}
         <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-1">
-            <MessageSquare className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">
-              Templates de Fallback
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              Modo de Operação do Agente
             </h2>
-          </div>
-
-          <div className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground" />
-            <p>
-              Mensagens enviadas caso a IA falhe ou retorne um formato inválido.
-              Use as variáveis <code className="text-amber-600 bg-amber-500/10 px-1 rounded">{"{{nome}}"}</code>{" "}
-              e <code className="text-amber-600 bg-amber-500/10 px-1 rounded">{"{{empresa}}"}</code> para personalizar.
+            <p className="text-xs text-muted-foreground">
+              Escolha como os leads entrarão na sua régua de remarketing.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Template Cold */}
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                Lead Frio
-              </Label>
-              <textarea
-                value={config.template_cold}
-                onChange={(e) => setConfig({ ...config, template_cold: e.target.value })}
-                placeholder={"Oi {{nome}}! Tudo bem? Estava pensando em você e gostaria de entender melhor como posso ajudar..."}
-                rows={5}
-                className="w-full resize-none rounded-xl bg-background border border-input p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50 custom-scrollbar"
-              />
-            </div>
-
-            {/* Template Interested */}
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                Demonstrou Interesse
-              </Label>
-              <textarea
-                value={config.template_interested}
-                onChange={(e) => setConfig({ ...config, template_interested: e.target.value })}
-                placeholder={"Oi {{nome}}! Notei que você demonstrou interesse antes. Ainda está analisando? Posso te ajudar a decidir..."}
-                rows={5}
-                className="w-full resize-none rounded-xl bg-background border border-input p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500/50 custom-scrollbar"
-              />
-            </div>
-
-            {/* Template Objection */}
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                Levantou Objeção
-              </Label>
-              <textarea
-                value={config.template_objection}
-                onChange={(e) => setConfig({ ...config, template_objection: e.target.value })}
-                placeholder={"Oi {{nome}}! Entendo que talvez tenha surgido alguma dúvida. Quero garantir que você tem todas as informações..."}
-                rows={5}
-                className="w-full resize-none rounded-xl bg-background border border-input p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/50 custom-scrollbar"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Seção 4 — Status & Estatísticas ──────────────────────────────── */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
-              <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">
-                Status dos Leads
-              </h2>
-            </div>
+          {/* Seletor Toggle tipo Admin */}
+          <div className="flex p-1 bg-black/60 rounded-xl border border-zinc-800 w-full sm:w-fit">
             <button
-              onClick={() => userId && fetchStats(userId)}
-              disabled={isRefreshingStats}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-              title="Atualizar estatísticas"
+              type="button"
+              onClick={() => setConfig({ ...config, agent_mode: "passive" })}
+              className={cn(
+                "flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300",
+                config.agent_mode === "passive"
+                  ? "bg-zinc-800 text-white shadow-md border border-zinc-700"
+                  : "text-zinc-400 hover:text-white"
+              )}
             >
-              <RefreshCw className={cn("h-3 w-3", isRefreshingStats && "animate-spin")} />
-              Atualizar
+              <Shield className="w-4 h-4 text-amber-400" />
+              Agente Passivo
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfig({ ...config, agent_mode: "proactive" })}
+              className={cn(
+                "flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300",
+                config.agent_mode === "proactive"
+                  ? "bg-[#00A3FF] text-white shadow-[0_0_15px_rgba(0,163,255,0.4)]"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Zap className="w-4 h-4 text-white" />
+              Agente Proativo
             </button>
           </div>
 
-          {stats === null || isRefreshingStats ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          {/* Card explicativo do modo selecionado */}
+          {config.agent_mode === "passive" ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex gap-3 items-start">
+              <Shield className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs">
+                <p className="font-semibold text-amber-300">Modo Passivo Selecionado</p>
+                <p className="text-muted-foreground">
+                  Nenhum lead recebe mensagens automáticas por padrão. Todos entram com o RMK desativado. 
+                  Você escolhe na tela de Atendimento, durante a conversa, quando quer ativar o remarketing daquele lead específico clicando no botão <strong>"RMK"</strong>.
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-accent/30 border border-[#00A3FF]/20 rounded-xl p-4 text-center">
-                <Target className="h-5 w-5 text-[#00A3FF] mx-auto mb-2" />
-                <p className="text-2xl font-bold text-[#00A3FF]">{stats.active}</p>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Em sequência ativa</p>
-              </div>
-
-              <div className="bg-accent/30 border border-red-500/20 rounded-xl p-4 text-center">
-                <ShieldOff className="h-5 w-5 text-red-500 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-red-500">{stats.optout}</p>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Opt-out solicitado</p>
-              </div>
-
-              <div className="bg-accent/30 border border-emerald-500/20 rounded-xl p-4 text-center">
-                <Flame className="h-5 w-5 text-emerald-500 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-emerald-500">{stats.converted}</p>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Responderam / Convertidos</p>
-              </div>
-
-              <div className="bg-accent/30 border border-border rounded-xl p-4 text-center">
-                <MessageSquare className="h-5 w-5 text-muted-foreground mx-auto mb-2" />
-                <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Total tocados pelo RMK</p>
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 flex gap-3 items-start">
+              <Zap className="h-5 w-5 text-[#00A3FF] shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs">
+                <p className="font-semibold text-blue-300">Modo Proativo Selecionado</p>
+                <p className="text-muted-foreground">
+                  <strong>Todos os novos leads criados a partir de agora</strong> entram automaticamente na sua régua de disparos seguindo as regras de horário abaixo. 
+                  Se você não quiser que um lead específico continue no fluxo, basta clicar no botão "RMK" dele no atendimento para cancelar os agendamentos futuros.
+                </p>
               </div>
             </div>
-          )}
-
-          {stats && stats.total === 0 && !isRefreshingStats && (
-            <p className="text-center text-xs text-muted-foreground pt-2">
-              Nenhum lead foi processado pelo remarketing ainda. As métricas aparecerão aqui após os primeiros disparos.
-            </p>
           )}
         </div>
 
-        {/* ── Seção 5 — Gerenciar Leads ────────────────────────────────────── */}
+        {/* ── 3. Regras de Horários (Régua de Disparos) ──────────────────────── */}
         <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Search className="h-4 w-4 text-violet-500" />
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">
-              Gerenciar Leads
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <Clock className="h-5 w-5 text-[#00A3FF]" />
+              Regras de Horários dos Disparos
             </h2>
-          </div>
-
-          <div className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground" />
-            <p>
-              Por padrão, todos os leads são elegíveis ao remarketing. Use a busca abaixo para
-              ativar ou desativar o RMK individualmente por lead.
-              Reativar um lead <strong className="text-foreground">reinicia a contagem de tentativas</strong>.
+            <p className="text-xs text-muted-foreground">
+              Configure as etapas de tempo calculadas a partir do momento da ativação do lead.
             </p>
           </div>
 
-          {/* Ações em Massa */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-accent/20 border border-border rounded-xl">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-foreground mb-0.5">Ações em Massa</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Afeta todos os leads, exceto os com{" "}
-                <span className="text-red-400 font-medium">opt-out</span> ou{" "}
-                <span className="text-emerald-400 font-medium">convertidos</span>.
-              </p>
-            </div>
-            <div className="flex gap-2 flex-shrink-0">
+          {/* Lista de regras cadastradas */}
+          <div className="space-y-3">
+            {config.time_rules && config.time_rules.length > 0 ? (
+              config.time_rules.map((rule, idx) => (
+                <div
+                  key={rule.id || idx}
+                  className="flex items-center justify-between p-3.5 bg-black/40 border border-zinc-800 rounded-xl"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-full bg-[#00A3FF]/10 text-[#00A3FF] font-bold text-xs border border-[#00A3FF]/20">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-white">{rule.label}</p>
+                      <p className="text-[11px] text-zinc-400">
+                        {rule.days > 0 ? `${rule.days}d ` : ""}
+                        {rule.hours > 0 ? `${rule.hours}h ` : ""}
+                        {rule.minutes > 0 ? `${rule.minutes}min ` : ""}
+                        após o momento da ativação
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveTimeRule(idx)}
+                    className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 h-8 w-8 p-0"
+                    title="Remover etapa"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-zinc-800 text-center text-xs text-zinc-500">
+                Nenhuma regra cadastrada. Adicione pelo menos uma etapa abaixo.
+              </div>
+            )}
+          </div>
+
+          {/* Form para adicionar nova regra */}
+          <div className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-4">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+              Adicionar Nova Etapa de Tempo
+            </Label>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+              <div>
+                <Label className="text-[11px] text-zinc-400">Dias</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="365"
+                  value={newDays}
+                  onChange={(e) => setNewDays(e.target.value)}
+                  className="bg-black border-zinc-700 h-9 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] text-zinc-400">Horas</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={newHours}
+                  onChange={(e) => setNewHours(e.target.value)}
+                  className="bg-black border-zinc-700 h-9 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] text-zinc-400">Minutos</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={newMinutes}
+                  onChange={(e) => setNewMinutes(e.target.value)}
+                  className="bg-black border-zinc-700 h-9 text-sm"
+                />
+              </div>
               <Button
-                onClick={() => setShowEnableAllConfirm(true)}
-                disabled={isEnablingAll || isDisablingAll}
-                variant="outline"
-                size="sm"
-                className="gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:border-emerald-500/60 hover:text-emerald-400"
+                type="button"
+                onClick={handleAddTimeRule}
+                className="h-9 bg-zinc-800 hover:bg-zinc-700 text-white font-medium border border-zinc-700 gap-1.5"
               >
-                {isEnablingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
-                Ligar para Todos
-              </Button>
-              <Button
-                onClick={() => setShowDisableAllConfirm(true)}
-                disabled={isEnablingAll || isDisablingAll}
-                variant="outline"
-                size="sm"
-                className="gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/60 hover:text-red-400"
-              >
-                {isDisablingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
-                Desligar para Todos
+                <Plus className="h-4 w-4" /> Adicionar
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Search input */}
-          <div className="flex gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearchLeads()}
-                placeholder="Buscar por nome ou telefone..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-background border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-              />
+        {/* ── 4. Cérebro da IA (Instruções e Prompt) ────────────────────────── */}
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-[#00A3FF]" />
+              Cérebro da IA (Instruções do Prompt)
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Estas instruções orientam a inteligência artificial na hora de gerar a mensagem personalizada de remarketing para cada lead.
+            </p>
+          </div>
+
+          <Textarea
+            rows={5}
+            value={config.ai_prompt}
+            onChange={(e) => setConfig({ ...config, ai_prompt: e.target.value })}
+            placeholder="Ex: Você é um consultor atencioso. O cliente parou de responder. Pergunte de forma leve se ele conseguiu analisar a proposta..."
+            className="bg-black/50 border-zinc-800 font-mono text-xs leading-relaxed"
+          />
+        </div>
+
+        {/* ── 5. Fila de Agendamentos em Tempo Real ─────────────────────────── */}
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-[#00A3FF]" />
+                  Fila de Disparos Programados
+                </h2>
+                {totalQueueCount > 0 && (
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
+                    {totalQueueCount > 20 ? `Próximos 20 de ${totalQueueCount}` : `${totalQueueCount} ${totalQueueCount === 1 ? 'agendado' : 'agendados'}`}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Próximos leads com horários agendados aguardando o momento exato do disparo automático.
+              </p>
             </div>
             <Button
-              onClick={handleSearchLeads}
-              disabled={isSearching || !searchQuery.trim()}
-              className="bg-violet-600 hover:bg-violet-700 text-white gap-2 px-5 shrink-0"
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={loadQueue}
+              disabled={isLoadingQueue}
+              className="border-zinc-700 bg-zinc-900/60 hover:bg-zinc-800 h-8 gap-1.5 text-xs text-zinc-300 self-start sm:self-auto"
             >
-              {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              Buscar
+              <RefreshCw className={cn("h-3.5 w-3.5", isLoadingQueue && "animate-spin")} />
+              Atualizar Fila
             </Button>
           </div>
 
-          {/* Search results */}
-          {searchResults.length > 0 && (
-            <div className="space-y-2">
-              {searchResults.map((lead) => {
-                const isEnabled = lead.rmk?.rmk_enabled !== false
-                const statusInfo = getRmkStatusLabel(lead.rmk)
-                const isToggling = togglingLeadId === lead.id
-
-                return (
-                  <div
-                    key={lead.id}
-                    className="flex items-center justify-between p-3 bg-accent/30 border border-border rounded-xl gap-4"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground font-medium truncate">
-                        {lead.full_name || "Sem nome"}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{lead.whatsapp}</p>
+          {queue.length > 0 ? (
+            <div className="rounded-xl border border-zinc-800 overflow-hidden bg-black/40">
+              <div className="divide-y divide-zinc-800/80">
+                {queue.map((item) => (
+                  <div key={item.id} className="p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-white">
+                          {item.display_name || item.leads?.full_name || "Lead"}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono font-medium">
+                          Etapa {item.step}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-zinc-400 font-mono text-[11px]">
+                        <span className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {item.display_phone || item.leads?.whatsapp || "Sem número"}
+                        </span>
+                        <span className="flex items-center gap-1 text-amber-300">
+                          <Clock className="h-3 w-3" />
+                          {new Date(item.scheduled_at).toLocaleString("pt-BR")}
+                        </span>
+                      </div>
                     </div>
 
-                    <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full border shrink-0", statusInfo.color)}>
-                      {statusInfo.label}
-                    </span>
-
-                    <button
-                      onClick={() => handleToggleLeadRmk(lead.id, lead.rmk)}
-                      disabled={isToggling}
-                      className={cn(
-                        "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all shrink-0",
-                        isEnabled
-                          ? "text-red-500 border-red-500/20 hover:bg-red-500/10"
-                          : "text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/10"
-                      )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={cancelingId === item.id}
+                      onClick={() => handleCancelLeadQueue(item.lead_id, item.id)}
+                      className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 h-7 text-xs gap-1"
                     >
-                      {isToggling ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : isEnabled ? (
-                        <UserX className="h-3 w-3" />
-                      ) : (
-                        <UserCheck className="h-3 w-3" />
-                      )}
-                      {isEnabled ? "Desativar" : "Ativar"}
-                    </button>
+                      {cancelingId === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      Cancelar
+                    </Button>
                   </div>
-                )
-              })}
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 rounded-xl border border-dashed border-zinc-800 text-center text-xs text-zinc-500 space-y-1">
+              <CheckCircle2 className="h-6 w-6 text-zinc-600 mx-auto" />
+              <p>Nenhum disparo pendente na fila neste momento.</p>
+              <p className="text-[11px] text-zinc-600">
+                Ative o RMK de um lead no Atendimento ou aguarde novos leads no modo Proativo.
+              </p>
             </div>
           )}
-
-          {searchResults.length === 0 && searchQuery && !isSearching && (
-            <p className="text-center text-xs text-muted-foreground py-4">
-              Nenhum lead encontrado para "{searchQuery}".
-            </p>
-          )}
         </div>
-
       </div>
-
-      {/* ── Modal: Confirmar Ligar Todos ────────────────────────────────────── */}
-      <AlertDialog open={showEnableAllConfirm} onOpenChange={setShowEnableAllConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Ligar RMK para Todos?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O remarketing será <strong>ativado</strong> para todos os leads que foram desativados manualmente.
-              Leads com status <strong>opt-out</strong> ou <strong>convertido</strong> serão ignorados.
-              A contagem de tentativas será reiniciada para os leads reativados.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isEnablingAll}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleEnableAll}
-              disabled={isEnablingAll}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
-            >
-              {isEnablingAll && <Loader2 className="h-4 w-4 animate-spin" />}
-              Sim, ligar para todos
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── Modal: Confirmar Desligar Todos ─────────────────────────────────── */}
-      <AlertDialog open={showDisableAllConfirm} onOpenChange={setShowDisableAllConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Desligar RMK para Todos?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O remarketing será <strong>desativado</strong> para todos os leads sem exceção.
-              Nenhum lead receberá mensagens automáticas até ser reativado individualmente
-              ou pelo botão "Ligar para Todos".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDisablingAll}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDisableAll}
-              disabled={isDisablingAll}
-              className="bg-red-600 hover:bg-red-700 text-white gap-2"
-            >
-              {isDisablingAll && <Loader2 className="h-4 w-4 animate-spin" />}
-              Sim, desligar para todos
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
     </div>
   )
 }

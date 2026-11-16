@@ -176,7 +176,8 @@ function isGenericName(name: string, phone?: string): boolean {
   if (/^\d+$/.test(n)) return true
   if (n.includes('lead whatsapp')) return true
   if (n.includes('lead externo')) return true
-  if (n === 'sem nome') return true
+  if (n.includes('lead importado')) return true
+  if (n === 'sem nome' || n === 'lead desconhecido') return true
   return false
 }
 
@@ -370,6 +371,14 @@ async function handleIncomingMessage(token: string, body: any) {
         if (!leadError && newLead) {
           leadId = newLead.id
           console.log(`CRM: Created new lead ${leadId} for ${senderPhone} in "Novos Leads"`)
+
+          // Agendamento automático se o usuário estiver no modo Agente Proativo
+          try {
+            const { triggerProactiveRemarketingForNewLead } = await import('@/lib/actions/remarketing')
+            await triggerProactiveRemarketingForNewLead(newLead.id, userId)
+          } catch (rmkErr: any) {
+            console.warn('[Webhook] Falha ao acionar RMK proativo para novo lead:', rmkErr.message)
+          }
         } else {
           console.error("CRM: Failed to create lead:", leadError)
         }
