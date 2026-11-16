@@ -423,6 +423,27 @@ async function handleIncomingMessage(token: string, body: any) {
 
     console.log(`Message from ${senderPhone} saved → conversation ${conversation.id} → lead ${leadId}`)
 
+    // 8. Se a mensagem for recebida do cliente (from_me === false) e estiver no modo PASSIVO:
+    // O cliente acabou de responder, então encerra a fila de remarketing dele imediatamente.
+    // (No modo PROATIVO, mantemos a esteira viva para follow-ups futuros de longo prazo).
+    if (!fromMe && leadId) {
+      try {
+        const { data: config } = await supabase
+          .from('remarketing_configs')
+          .select('agent_mode')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (config?.agent_mode !== 'proactive') {
+          const { cancelLeadRemarketingQueue } = await import('@/lib/actions/remarketing')
+          await cancelLeadRemarketingQueue(leadId, userId)
+          console.log(`[Webhook] Modo Passivo: Lead ${leadId} respondeu. RMK cancelado e fila futura limpa automaticamente.`)
+        }
+      } catch (rmkCleanErr: any) {
+        console.warn('[Webhook] Falha ao processar cancelamento de RMK passivo:', rmkCleanErr.message)
+      }
+    }
+
   } catch (err) {
     console.error("Error handling incoming message:", err)
   }

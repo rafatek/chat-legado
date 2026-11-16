@@ -51,7 +51,10 @@ DO $$ BEGIN
 END $$;
 
 -- 5. Função oficial consumida pelo N8N para buscar disparos prontos
--- Trava de segurança: só retorna leads cujo WhatsApp está 100% conectado
+-- Regras inteligentes:
+-- • Exige WhatsApp conectado (wc.status = 'connected')
+-- • MODO PROATIVO: Só segura o disparo se o cliente falou nos últimos 10 minutos (conversa ao vivo).
+-- • MODO PASSIVO: Se o cliente respondeu após a criação do agendamento, não dispara.
 CREATE OR REPLACE FUNCTION get_pending_remarketing_queue()
 RETURNS TABLE (
   queue_id UUID,
@@ -87,11 +90,28 @@ BEGIN
   JOIN public.whatsapp_connections wc ON wc.user_id = rq.user_id AND wc.status = 'connected'
   WHERE 
     rq.scheduled_at <= NOW()
-    AND NOT EXISTS (
-      SELECT 1 FROM public.messages m 
-      WHERE m.lead_id = l.id 
-        AND m.from_me = false 
-        AND m.created_at >= rq.created_at
+    AND (
+      -- MODO PROATIVO: Trava leve de 10 minutos apenas para não interromper conversa em tempo real
+      (
+        rc.agent_mode = 'proactive'
+        AND NOT EXISTS (
+          SELECT 1 FROM public.messages m 
+          WHERE m.lead_id = l.id 
+            AND m.from_me = false 
+            AND m.created_at >= NOW() - INTERVAL '10 minutes'
+        )
+      )
+      OR
+      -- MODO PASSIVO: Se o lead respondeu após a criação da fila, segura o disparo
+      (
+        (rc.agent_mode IS NULL OR rc.agent_mode != 'proactive')
+        AND NOT EXISTS (
+          SELECT 1 FROM public.messages m 
+          WHERE m.lead_id = l.id 
+            AND m.from_me = false 
+            AND m.created_at >= rq.created_at
+        )
+      )
     )
   ORDER BY rq.scheduled_at ASC
   LIMIT 50;
