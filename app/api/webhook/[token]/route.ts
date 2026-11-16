@@ -342,6 +342,30 @@ async function handleIncomingMessage(token: string, body: any) {
 
       console.log(`CRM: Updated existing lead ${leadId} with last_message`)
 
+      // Se o usuário estiver no modo PROATIVO e este lead existente ainda não tiver fila agendada, agenda automaticamente
+      try {
+        const { data: config } = await supabase
+          .from('remarketing_configs')
+          .select('is_active, agent_mode')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (config?.is_active && config?.agent_mode === 'proactive') {
+          const { data: queueItems } = await supabase
+            .from('remarketing_queue')
+            .select('id')
+            .eq('lead_id', leadId)
+            .limit(1)
+
+          if (!queueItems || queueItems.length === 0) {
+            const { triggerProactiveRemarketingForNewLead } = await import('@/lib/actions/remarketing')
+            await triggerProactiveRemarketingForNewLead(leadId, userId)
+          }
+        }
+      } catch (rmkCheckErr: any) {
+        console.warn('[Webhook] Falha ao checar RMK proativo para lead existente:', rmkCheckErr.message)
+      }
+
     } else {
       // New contact → create lead in "Novos Leads" (position = 0)
       const { data: firstColumn } = await supabase

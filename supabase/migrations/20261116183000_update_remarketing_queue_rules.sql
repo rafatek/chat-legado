@@ -71,3 +71,4 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Permissão restrita ao service_role
 REVOKE EXECUTE ON FUNCTION get_pending_remarketing_queue() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION get_pending_remarketing_queue() TO service_role;
+

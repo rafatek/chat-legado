@@ -1201,6 +1201,20 @@ export default function AtendimentoPage() {
                 .maybeSingle()
             if (!error && data) {
                 setRmkEnabled(data.rmk_enabled === true)
+            } else if (userId) {
+                // Se ainda não tem registro específico, verifica se o usuário está no modo Proativo
+                const { data: config } = await supabase
+                    .from('remarketing_configs')
+                    .select('is_active, agent_mode')
+                    .eq('user_id', userId)
+                    .maybeSingle()
+
+                if (config?.is_active && config?.agent_mode === 'proactive') {
+                    setRmkEnabled(true)
+                    toggleLeadRemarketingAction(selectedConv.lead_id, true).catch(console.error)
+                } else {
+                    setRmkEnabled(false)
+                }
             } else {
                 setRmkEnabled(false)
             }
