@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Lock, CheckCheck } from "lucide-react"
+import { Lock, CheckCheck, AlertTriangle, Loader2, ArrowLeft } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { supabase } from '@/lib/supabase'
 import { motion } from "framer-motion"
@@ -129,6 +129,8 @@ export default function UpdatePasswordPage() {
     const [isError, setIsError] = useState(false)
     const [isSuccess, setIsSuccess] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
+    const [isCheckingSession, setIsCheckingSession] = useState(true)
+    const [hasValidSession, setHasValidSession] = useState(false)
     const [message, setMessage] = useState('')
     const router = useRouter()
 
@@ -157,17 +159,23 @@ export default function UpdatePasswordPage() {
 
             if (error) {
                 setIsError(true)
-                setMessage(error.message)
+                let errorMsg = error.message
+                if (error.message.includes('Auth session missing')) {
+                    errorMsg = 'Sessão de recuperação expirada. Solicite um novo link.'
+                } else if (error.message.includes('same_password') || error.message.includes('should be different')) {
+                    errorMsg = 'A nova senha deve ser diferente da senha anterior.'
+                }
+                setMessage(errorMsg)
             } else {
                 setIsSuccess(true)
-                setMessage('Senha atualizada com sucesso! Redirecionando...')
+                setMessage('Senha atualizada com sucesso! Redirecionando para o login...')
                 setTimeout(() => {
                     router.push('/login')
-                }, 3000)
+                }, 2500)
             }
-        } catch (err) {
+        } catch (err: any) {
             setIsError(true)
-            setMessage('Ocorreu um erro inesperado.')
+            setMessage('Ocorreu um erro inesperado ao atualizar a senha.')
         } finally {
             setIsLoading(false)
         }
@@ -175,6 +183,52 @@ export default function UpdatePasswordPage() {
 
     useEffect(() => {
         setMounted(true)
+
+        let resolved = false
+        const resolveSuccess = () => {
+            if (!resolved) {
+                resolved = true
+                setHasValidSession(true)
+                setIsCheckingSession(false)
+            }
+        }
+
+        const resolveFailure = () => {
+            if (!resolved) {
+                resolved = true
+                setHasValidSession(false)
+                setIsCheckingSession(false)
+            }
+        }
+
+        // 1. Escuta alterações no estado de autenticação (captura cookies e hash #access_token)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'PASSWORD_RECOVERY' || session) {
+                resolveSuccess()
+            }
+        })
+
+        // 2. Checagem direta de sessão
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                resolveSuccess()
+            }
+        })
+
+        // 3. Timeout para encerrar checagem se não houver sessão ativa
+        const timer = setTimeout(async () => {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session) {
+                resolveSuccess()
+            } else {
+                resolveFailure()
+            }
+        }, 1800)
+
+        return () => {
+            subscription.unsubscribe()
+            clearTimeout(timer)
+        }
     }, [])
 
     return (
@@ -234,14 +288,42 @@ export default function UpdatePasswordPage() {
             `} />
 
                         <CardHeader className="space-y-1 pb-4">
-                            <CardTitle className="text-xl font-light tracking-wide">Nova Senha</CardTitle>
+                            <CardTitle className="text-xl font-light tracking-wide">
+                                {isCheckingSession ? "Validando Acesso..." : !hasValidSession ? "Link Expirado" : "Nova Senha"}
+                            </CardTitle>
                             <CardDescription className="text-gray-500">
-                                Digite sua nova senha abaixo.
+                                {isCheckingSession
+                                    ? "Verificando token de segurança da recuperação..."
+                                    : !hasValidSession
+                                        ? "O link de recuperação acessado é inválido ou já expirou."
+                                        : "Digite sua nova senha abaixo para redefinir o acesso."}
                             </CardDescription>
                         </CardHeader>
 
                         <CardContent className="space-y-6">
-                            {!isSuccess ? (
+                            {isCheckingSession ? (
+                                <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                                    <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                                    <span className="text-xs text-gray-400">Autenticando sessão de segurança...</span>
+                                </div>
+                            ) : !hasValidSession ? (
+                                <div className="text-center space-y-4 py-2">
+                                    <div className="flex justify-center text-amber-400">
+                                        <AlertTriangle className="w-12 h-12" />
+                                    </div>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        Por motivos de segurança, os links de recuperação expiram após alguns minutos ou após serem utilizados.
+                                    </p>
+                                    <Button asChild className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium">
+                                        <Link href="/forgot-password">Solicitar Novo Link</Link>
+                                    </Button>
+                                    <div className="pt-2">
+                                        <Link href="/login" className="inline-flex items-center text-xs text-gray-500 hover:text-blue-400 transition-colors gap-2">
+                                            <ArrowLeft className="w-3 h-3" /> Voltar para Login
+                                        </Link>
+                                    </div>
+                                </div>
+                            ) : !isSuccess ? (
                                 <>
                                     <form onSubmit={handleUpdate} className="space-y-6">
                                         <div className={`space-y-2 transition-all duration-700 delay-500 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>

@@ -178,6 +178,17 @@ export default function ForgotPasswordPage() {
 
     useEffect(() => {
         setMounted(true)
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search)
+            const errParam = params.get('error')
+            if (errParam === 'codigo_expirado') {
+                setIsError(true)
+                setMessage('O link de recuperação expirou ou já foi utilizado. Solicite um novo abaixo.')
+            } else if (errParam === 'link_invalido') {
+                setIsError(true)
+                setMessage('Link de recuperação inválido. Solicite um novo link abaixo.')
+            }
+        }
     }, [])
 
     return (
